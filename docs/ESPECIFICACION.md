@@ -1,8 +1,15 @@
 # VPN Manager — Especificación y hoja de ruta
 
 > Panel web para **gestionar un servidor VPN** (OpenVPN **y** WireGuard) desde una
-> interfaz, en lugar de por línea de comandos. Estado: **especificación inicial**
-> (2026-06-21). Pendiente de confirmar stack para arrancar el scaffold.
+> interfaz, en lugar de por línea de comandos.
+>
+> **Estado (verificado contra el código 2026-07-08): completo y publicable.** Este
+> documento es la especificación INICIAL (2026-06-21) y quedó desfasado — las fases
+> 1-4 están hechas, no solo 1-3 como decían las anotaciones `[HECHO]`/`[EN CURSO]`
+> de abajo (multiusuario+roles en `vpn_manager/users.py`, auditoría persistida en
+> `vpn_manager/audit.py`, entrega de config en `vpn_manager/delivery.py`, instalador
+> multi-distro en `vpn_manager/installer.py`). Solo queda la Fase 5 (despliegue) y
+> los logos oficiales (activo gráfico que solo tiene José, ver README de `professional/`).
 
 ## 1. Objetivo
 
@@ -45,9 +52,11 @@ Hacer por web todo lo que hoy se hace por CLI en el propio servidor VPN:
   configurable). Todo protegido salvo `/login` y `/health`. Seguro por defecto: en
   producción sin contraseña, no arranca. Anti–fuerza bruta por IP. Hash generable con
   `python -m vpn_manager.hashpw`.
-- Pendiente: autorización por rol (de momento un único admin).
-- **Auditoría**: registro de toda acción sensible (crear/revocar cliente, parar
-  servicio) con usuario, hora y resultado.
+- **[HECHO]** Autorización por rol: tres roles (admin/operador/visor,
+  `vpn_manager/users.py`), permisos exigidos en el backend en cada endpoint.
+- **[HECHO] Auditoría**: registro persistido (JSON-Lines, `vpn_manager/audit.py`)
+  de toda acción sensible (crear/revocar cliente, parar servicio) con usuario,
+  hora y resultado.
 - **Acceso solo interno** (como CyberHound): nunca expuesto a internet.
 - Validación estricta de entrada (nombres de cliente, etc.) → sin inyección de
   comandos. Plantillas de config parametrizadas.
@@ -71,12 +80,14 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    revocar (CRL). En **sandbox** (en real delega en easy-rsa). 21 tests verdes.
 3. **[HECHO] WireGuard**: adaptador (peers, `wg show`, config, alta/baja, QR) +
    config del servidor editable; selector OpenVPN/WireGuard en el panel.
-4. **[EN CURSO] Extras**: entrega de config (descargar/guardar/correo); **multiusuario
-   + roles** (admin/operador/visor) con permisos exigidos en el backend; **instalación**
-   de servicios (paquetes multi-distro + llave en mano con angristan pineado/verificado);
-   navegación por páginas. Pendiente: **historial/auditoría persistida** y UI pulida.
-5. **Despliegue interno** (cuando José lo diga): apuntar al servidor real con
-   privilegios acotados, detrás del proxy interno.
+4. **[HECHO] Extras**: entrega de config (descargar/guardar/correo, `delivery.py`);
+   multiusuario + roles (admin/operador/visor) con permisos exigidos en el backend;
+   instalación de servicios (paquetes multi-distro, `installer.py`); navegación por
+   páginas; historial/auditoría persistida.
+5. **[PENDIENTE] Despliegue interno** (cuando José lo diga): apuntar al servidor
+   real con privilegios acotados, detrás del proxy interno. Único paso de código
+   que falta antes: sustituir los logos placeholder por los oficiales de OpenVPN/
+   WireGuard (`vpn_manager/ui/assets/README.md` — activo gráfico que solo tiene José).
 
 ## 6. Datos de entorno (verificado 2026-06-21)
 
