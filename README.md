@@ -25,6 +25,13 @@ su configuración y retirarles el acceso.
 - **Conexiones en tiempo real**: quién está conectado, desde cuándo y su tráfico.
 - **Interfaz de escritorio** (no móvil) con barra lateral, y **marca por protocolo**:
   emblema y color según la VPN activa (OpenVPN en naranja, WireGuard en granate).
+- **Paquete de alta disponibilidad** (`POST /api/ha/clients/{name}/bundle`): si un
+  mismo cliente existe en ambos backends, empaqueta en un único ZIP su acceso
+  primario (OpenVPN) + un respaldo WireGuard + un script de vigilancia que
+  conmuta solo si el primario deja de responder de verdad. Genera también el
+  DNS de conmutación correcto (split-DNS vía `PostUp`/`PostDown`) para que los
+  nombres internos sigan resolviendo tras el failover — ver
+  [`vpn_manager/ha_bundle.py`](vpn_manager/ha_bundle.py).
 
 ## Seguridad
 
@@ -93,6 +100,7 @@ pip install -e ".[e2e]" && pytest e2e/ # e2e de la interfaz en navegador (Playwr
 | `GET`  | `/api/openvpn/server` | Configuración del servidor (rangos, cifrados, DNS…) |
 | `GET`  | `/api/openvpn/logs` | Últimas líneas del registro (`?lines=80`) |
 | `POST` | `/api/openvpn/service/{action}` | `start`/`stop`/`restart`/`reload` |
+| `POST` | `/api/ha/clients/{name}/bundle` | ZIP de alta disponibilidad (requiere el cliente ya creado en ambos backends) |
 
 ## Configuración
 

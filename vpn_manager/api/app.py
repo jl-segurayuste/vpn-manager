@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-from .. import audit, auth, bootstrap, delivery, installer, preflight, totp, users
+from .. import audit, auth, bootstrap, delivery, ha_bundle, installer, preflight, totp, users
 from ..backends.base import (
     AlreadyExists,
     Forbidden,
@@ -129,6 +129,18 @@ class SavePath(BaseModel):
 
 class SendEmail(BaseModel):
     email: str = Field(min_length=3, max_length=254)
+
+
+class HaBundleRequest(BaseModel):
+    """Parámetros del paquete de alta disponibilidad (OpenVPN primario + WireGuard
+    de respaldo) — ver `vpn_manager.ha_bundle` para el porqué de cada campo."""
+
+    health_check_hosts: list[str] = Field(min_length=1, max_length=10)
+    health_check_port: int = Field(default=443, ge=1, le=65535)
+    split_dns_domain: str = Field(default="", max_length=253)
+    dns_servers: list[str] = Field(default_factory=list, max_length=5)
+    notify_webhook: str = Field(default="", max_length=512)
+    check_interval_seconds: int = Field(default=60, ge=10, le=3600)
 
 
 def _deliver_save(backend, name: str, ext: str, dest: str, user: str) -> dict:
@@ -715,6 +727,39 @@ def openvpn_save(name: str, body: SavePath, user: str = Depends(require_perm("cl
 @app.post("/api/openvpn/clients/{name}/email", dependencies=_PROTECTED)
 def openvpn_email(name: str, body: SendEmail, user: str = Depends(require_perm("clients:write"))) -> dict:
     return _deliver_email(_openvpn(), name, "ovpn", body.email, user)
+
+
+# ── Alta disponibilidad (OpenVPN primario + WireGuard de respaldo) ──────────
+# Requiere que el cliente ya exista en AMBOS backends (dar de alta primero
+# por separado en /api/openvpn/clients y /api/wireguard/clients con el mismo
+# nombre) -- este endpoint solo empaqueta, no crea nada.
+@app.post("/api/ha/clients/{name}/bundle", dependencies=_PROTECTED)
+def ha_bundle_download(
+    name: str, body: HaBundleRequest, user: str = Depends(require_user)
+) -> Response:
+    try:
+        openvpn_conf = _openvpn().client_config(name)
+        wireguard_conf = _wireguard().client_config(name)
+    except VpnError as e:
+        raise _http(e) from e
+    cfg = ha_bundle.FailoverConfig(
+        name=name,
+        health_check_hosts=body.health_check_hosts,
+        health_check_port=body.health_check_port,
+        split_dns_domain=body.split_dns_domain,
+        dns_servers=body.dns_servers,
+        notify_webhook=body.notify_webhook,
+        check_interval_seconds=body.check_interval_seconds,
+    )
+    zip_bytes = ha_bundle.build_bundle_zip(
+        openvpn_conf=openvpn_conf, wireguard_conf=wireguard_conf, cfg=cfg
+    )
+    log.info("descarga de paquete de alta disponibilidad de «%s» por %s", name, user)
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}-ha-bundle.zip"'},
+    )
 
 
 # ── Utilidades ───────────────────────────────────────────────────────────────
