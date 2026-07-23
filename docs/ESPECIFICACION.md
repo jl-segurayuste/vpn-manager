@@ -25,6 +25,9 @@ Hacer por web todo lo que hoy se hace por CLI en el propio servidor VPN:
 - **Estado del servicio**: estado de `openvpn-server@` / `wg-quick@`, arrancar/
   parar/recargar, ver logs.
 - **Soporta los dos**: OpenVPN y WireGuard, con un modelo común y adaptadores.
+- **Alta disponibilidad**: para un cliente que exista en ambos backends, empaquetar
+  su acceso OpenVPN (primario) + el WireGuard homónimo (respaldo) + un script de
+  failover en un único ZIP descargable, con el DNS de conmutación ya resuelto.
 
 ## 2. Principios de diseño
 
@@ -88,6 +91,17 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    real con privilegios acotados, detrás del proxy interno. Único paso de código
    que falta antes: sustituir los logos placeholder por los oficiales de OpenVPN/
    WireGuard (`vpn_manager/ui/assets/README.md` — activo gráfico que solo tiene José).
+6. **[HECHO 2026-07-23] Paquete de alta disponibilidad**: `POST
+   /api/ha/clients/{name}/bundle` (`vpn_manager/ha_bundle.py`) + botón "Alta
+   disponibilidad" en la vista de OpenVPN del panel. Nace de un fallo real
+   encontrado el mismo día en el homelab de José: un failover manual bien
+   probado durante semanas rompía la resolución de nombres internos al
+   conmutar a WireGuard, porque el dominio DNS de "solo esto por el túnel"
+   nunca se replicaba en el perfil de respaldo. Este paquete genera ambas
+   configs + el script de vigilancia juntos desde el primer día, con el
+   split-DNS (`PostUp`/`PostDown` de `resolvectl`) ya resuelto en el propio
+   `.conf` de WireGuard — no depende de la app en marcha ni de
+   NetworkManager. 12 tests nuevos (`tests/test_ha_bundle.py`), CI verde.
 
 ## 6. Datos de entorno (verificado 2026-06-21)
 
