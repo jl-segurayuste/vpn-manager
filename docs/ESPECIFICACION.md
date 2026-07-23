@@ -42,8 +42,8 @@ Hacer por web todo lo que hoy se hace por CLI en el propio servidor VPN:
   explique qué hace.
 - **Configurable y SEGURO POR DEFECTO en dev**: rutas y servicios configurables
   (`/etc/openvpn`, `/etc/wireguard`, comandos). En **desarrollo apunta a un
-  sandbox** (`./sandbox/...`), **NUNCA al VPN de producción del homelab** (que es
-  delicado / de José). Apuntar al servidor real es una decisión explícita de prod.
+  sandbox** (`./sandbox/...`), **NUNCA a un servidor VPN de producción real**.
+  Apuntar al servidor real es una decisión explícita de prod.
 - **Privilegios mínimos**: las operaciones que requieren root (recargar servicio,
   escribir en `/etc/...`) se acotan; idealmente vía sudoers específicos o una capa
   de ejecución controlada. Nunca `shell=True` con entrada del usuario.
@@ -94,10 +94,10 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
 6. **[HECHO 2026-07-23] Paquete de alta disponibilidad**: `POST
    /api/ha/clients/{name}/bundle` (`vpn_manager/ha_bundle.py`) + botón "Alta
    disponibilidad" en la vista de OpenVPN del panel. Nace de un fallo real
-   encontrado el mismo día en el homelab de José: un failover manual bien
-   probado durante semanas rompía la resolución de nombres internos al
-   conmutar a WireGuard, porque el dominio DNS de "solo esto por el túnel"
-   nunca se replicaba en el perfil de respaldo. Este paquete genera ambas
+   encontrado en un failover manual bien probado durante semanas: rompía
+   la resolución de nombres internos al conmutar a WireGuard, porque el
+   dominio DNS de "solo esto por el túnel" nunca se replicaba en el
+   perfil de respaldo. Este paquete genera ambas
    configs + el script de vigilancia juntos desde el primer día, con el
    split-DNS (`PostUp`/`PostDown` de `resolvectl`) ya resuelto en el propio
    `.conf` de WireGuard — no depende de la app en marcha ni de
@@ -108,4 +108,4 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
 - `openvpn` instalado (`/usr/sbin/openvpn`), con `/etc/openvpn/{server,client}`.
 - WireGuard **no** instalado (se añadirá `wireguard-tools` para desarrollar su
   adaptador, o se simula en sandbox).
-- ⚠️ El OpenVPN **de producción del homelab no se toca** en desarrollo autónomo.
+- ⚠️ Ningún servidor OpenVPN **de producción real se toca** en desarrollo autónomo.
