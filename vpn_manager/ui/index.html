@@ -765,11 +765,15 @@ function renderClients(cl){
     let actions='';
     if(c.status==='valid'){
       const qr = BACKEND==='wireguard' ? `<a class="act" href="${api('/clients/'+enc+'/qr')}" target="_blank">Código QR</a>` : '';
+      // El paquete de alta disponibilidad combina OpenVPN (primario) + el
+      // dispositivo homónimo en WireGuard (respaldo) -- solo tiene sentido
+      // ofrecerlo desde la vista de OpenVPN.
+      const ha = (BACKEND==='openvpn' && w) ? `<button class="act" onclick="haBundle('${n}')">Alta disponibilidad</button>` : '';
       const wr = w ? `<button class="act" onclick="saveConfig('${n}')">Guardar en servidor</button>
         <button class="act" onclick="emailConfig('${n}')">Enviar por correo</button>
         <button class="act danger" onclick="revokeClient('${n}')">Retirar acceso</button>` : '';
       actions=`<div class="actions">
-        <a class="act" href="${api('/clients/'+enc+'/config')}" download>Descargar</a>${qr}${wr}</div>`;
+        <a class="act" href="${api('/clients/'+enc+'/config')}" download>Descargar</a>${qr}${ha}${wr}</div>`;
     } else if(c.status==='expired' && w){
       actions=`<div class="actions"><button class="act" onclick="renewClient('${n}')">Renovar acceso</button></div>`;
     }
@@ -855,6 +859,48 @@ async function emailConfig(name){
     const d=await r.json().catch(()=>({}));
     if(!r.ok){ toast(d.detail||'No se pudo enviar.'); return; }
     toast(d.simulated ? 'Correo simulado (SMTP no configurado) ✓' : 'Enviado a '+d.to+' ✓');
+  }catch(e){ toast('No se pudo conectar con el servidor.'); }
+}
+async function haBundle(name){
+  const hosts = prompt(
+    `Alta disponibilidad para «${name}»\n\n`+
+    `¿Qué dirección(es) IP se usan para comprobar que la VPN primaria sigue viva? `+
+    `Tienen que ser algo SOLO alcanzable a través de ella (no vale «¿hay Internet?»). `+
+    `Separa varias con comas.`, '');
+  if(hosts===null || !hosts.trim()){ return; }
+  const domain = prompt(
+    `¿Dominio a resolver solo por el túnel de respaldo (split-DNS)?\n\n`+
+    `Déjalo en blanco si no quieres tocar el DNS al conmutar. Ejemplo: ~miempresa.local`, '');
+  let dnsServers = [];
+  if(domain && domain.trim()){
+    const servers = prompt(`¿Servidor(es) DNS a usar para «${domain.trim()}»? Sepáralos con comas.`, '');
+    dnsServers = (servers||'').split(',').map(s=>s.trim()).filter(Boolean);
+  }
+  const webhook = prompt(
+    `¿URL de aviso (webhook, p. ej. ntfy) cuando salte el failover?\n\nDéjalo en blanco para no avisar.`, '');
+  try{
+    const r = await fetch(`/api/ha/clients/${encodeURIComponent(name)}/bundle`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        health_check_hosts: hosts.split(',').map(s=>s.trim()).filter(Boolean),
+        split_dns_domain: (domain||'').trim(),
+        dns_servers: dnsServers,
+        notify_webhook: (webhook||'').trim(),
+      }),
+    });
+    if(!r.ok){
+      const d = await r.json().catch(()=>({}));
+      toast(d.detail || 'No se pudo generar el paquete (¿existe también en WireGuard?).');
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${name}-ha-bundle.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('Paquete de alta disponibilidad descargado ✓');
   }catch(e){ toast('No se pudo conectar con el servidor.'); }
 }
 async function renewClient(name){
