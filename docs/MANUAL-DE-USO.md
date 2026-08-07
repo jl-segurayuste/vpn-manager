@@ -108,19 +108,25 @@ Acciones: **Añadir usuario** (usuario + contraseña de 8+ caracteres + rol), **
 rol**, **Cambiar contraseña** y **Borrar**. No puedes borrarte a ti mismo ni dejar el
 sistema sin ningún administrador. Cada usuario ve solo las acciones que su rol permite.
 
-## 11. Sistema e instalación de servicios
+## 11. Sistema, instalación y desinstalación de servicios
 
 La página **Sistema** muestra la **distribución** detectada, su **gestor de paquetes** y
-qué servicios VPN están **instalados**. Un administrador puede instalar los que falten:
+qué servicios VPN están **instalados**. Un administrador puede instalar los que falten, o
+desinstalar los que ya no hagan falta — los mismos dos niveles en ambos sentidos:
 
-- **Instalar paquetes**: instala OpenVPN/WireGuard con el gestor de la distro (apt, dnf…).
-- **Instalación completa**: instalación «llave en mano» (configura el servidor entero)
-  usando los scripts de [angristan](https://github.com/angristan/openvpn-install), que se
-  **descargan de una versión fijada y se verifican por SHA-256** antes de ejecutarse.
+- **Instalar / Desinstalar paquetes**: instala o quita OpenVPN/WireGuard con el gestor de
+  la distro (apt, dnf…). Al desinstalar, la configuración/PKI existente **no se toca**,
+  solo los paquetes del sistema.
+- **Instalación / Desinstalación completa**: «llave en mano» (configura o retira el
+  servidor entero: PKI, `server.conf`, firewall/NAT) usando los scripts de
+  [angristan](https://github.com/angristan/openvpn-install), que se **descargan de una
+  versión fijada y se verifican por SHA-256** antes de ejecutarse. La desinstalación
+  completa **borra la configuración y la PKI** — no se puede deshacer, el panel pide
+  confirmación dos veces antes de ejecutarla.
 
-> La instalación real requiere que el administrador la haya habilitado
-> (`VPNM_ALLOW_INSTALL=true`) y que el panel corra como root. En el modo de prueba solo
-> se **simula** (muestra el plan). Ver el [Manual de instalación](INSTALACION.md).
+> La acción real (instalar o desinstalar) requiere que el administrador la haya
+> habilitado (`VPNM_ALLOW_INSTALL=true`) y que el panel corra como root. En el modo de
+> prueba solo se **simula** (muestra el plan). Ver el [Manual de instalación](INSTALACION.md).
 
 ---
 

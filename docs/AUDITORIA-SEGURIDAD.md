@@ -62,12 +62,21 @@ sin material criptográfico en el repo.
 - **Multiusuario + roles**: permisos exigidos **en el backend** en cada endpoint (no solo
   en la UI). 3 roles; no se puede quedar sin admin ni borrar la propia cuenta. Contraseñas
   PBKDF2; usuario validado por regex. Verificado con tests (operador/visor reciben 403).
-- **Instalación de servicios**: alto riesgo (instala como root). Mitigado: rol admin
-  (`system:install`) + `VPNM_ALLOW_INSTALL=true` + root; **sandbox solo simula**; comandos
-  por lista (sin shell); auditoría. La distro se detecta de `/etc/os-release`.
-- **Instalación llave en mano (angristan)**: descarga **solo `https://`** de una **URL
-  fijada a commit** + **verificación SHA-256 obligatoria** (fail-closed sin checksum);
-  el script no se incluye en el repo. Mismos interruptores que arriba.
+- **Instalación y desinstalación de servicios**: alto riesgo en ambos sentidos (actúa
+  como root, y desinstalar además es destructivo/irreversible). Mitigado igual que la
+  instalación: rol admin (`system:install`) + `VPNM_ALLOW_INSTALL=true` + root;
+  **sandbox solo simula**; comandos por lista (sin shell); auditoría. La UI pide
+  confirmación **dos veces** antes de una desinstalación completa. `purge=true` (borrar
+  también configuración de paquetes) es opt-in explícito, nunca el comportamiento por
+  defecto.
+- **Instalación/desinstalación llave en mano (angristan)**: descarga **solo `https://`**
+  de una **URL fijada a commit** + **verificación SHA-256 obligatoria** (fail-closed sin
+  checksum); el script no se incluye en el repo. Mismos interruptores que arriba. La
+  invocación de desinstalación (subcomando `uninstall --force` en OpenVPN;
+  `MENU_OPTION=4` + confirmación por stdin en WireGuard) se verificó línea a línea contra
+  el contenido real de cada commit fijado, no contra la rama `master` de cada proyecto
+  (que puede comportarse de forma distinta) — ver el detalle en
+  [`INSTALACION.md`](INSTALACION.md).
 - **Assets estáticos** (`/assets`): solo logos; servidos por StaticFiles (sin traversal).
 - **Entrega de config**: «guardar en servidor» restringido a `export_dir` (anti-traversal);
   «correo» valida la dirección y avisa de que no es canal seguro.

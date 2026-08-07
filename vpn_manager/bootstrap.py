@@ -1,8 +1,9 @@
-"""Instalación «llave en mano» de los servidores VPN.
+"""Instalación y desinstalación «llave en mano» de los servidores VPN.
 
 Reutiliza los conocidos instaladores de angristan (MIT), que además de instalar los
 paquetes configuran el servidor completo (PKI, server.conf, firewall/NAT, primer
-cliente) en muchas distribuciones:
+cliente) en muchas distribuciones — y que, ejecutados de nuevo sobre una instalación
+ya existente, también saben desinstalarla por completo:
 
 - OpenVPN:   https://github.com/angristan/openvpn-install   (openvpn-install.sh)
 - WireGuard: https://github.com/angristan/wireguard-install (wireguard-install.sh)
@@ -11,6 +12,21 @@ NO incluimos su código en el repositorio: el panel **descarga** el script de un
 **fijada a un commit concreto** y **verifica su SHA-256** antes de ejecutarlo (cadena
 de suministro). Sin checksum configurado, no se ejecuta (fail-closed). En sandbox solo
 se simula (no descarga ni ejecuta).
+
+Invocación de desinstalación por backend (verificado contra el contenido real de
+cada commit fijado en `config.py`, no contra `master` — las dos versiones no tienen
+por qué comportarse igual):
+- **OpenVPN** (commit `935e559…`): la propia CLI del script ya trae un subcomando
+  `uninstall --force` completamente desatendido — no necesita variables de entorno
+  ni entrada por stdin, `--force` salta la confirmación interactiva
+  (`REMOVE=y` internamente).
+- **WireGuard** (commit `832fb98…`): sigue siendo el estilo antiguo de menú
+  interactivo, sin subcomandos. `manageMenu()` comprueba `MENU_OPTION` con un
+  `until` ANTES de leer de stdin, así que fijarla a `4` (opción "Uninstall
+  WireGuard") salta ese menú — pero la confirmación de `uninstallWg()`
+  (`read -rp "Do you really want to remove WireGuard? [y/n]: " REMOVE`) es una
+  lectura incondicional que ignora cualquier `REMOVE` ya exportado, así que hace
+  falta además alimentar `"y\\n"` por stdin.
 """
 from __future__ import annotations
 
@@ -24,6 +40,14 @@ from pathlib import Path
 REPOS = {
     "openvpn": "angristan/openvpn-install",
     "wireguard": "angristan/wireguard-install",
+}
+
+# Cómo invocar la desinstalación en cada script — ver la nota de verificación en el
+# docstring del módulo. `args` se añaden a la línea de comandos, `env` se añade al
+# entorno del proceso, `stdin` (si no es None) se pasa como `input=` a subprocess.run.
+_UNINSTALL_INVOCATION: dict[str, dict] = {
+    "openvpn": {"args": ["uninstall", "--force"], "env": {}, "stdin": None},
+    "wireguard": {"args": [], "env": {"MENU_OPTION": "4"}, "stdin": "y\n"},
 }
 
 
@@ -116,3 +140,56 @@ def run(backend: str, settings, sandbox: bool) -> dict:
     except (OSError, subprocess.TimeoutExpired) as e:  # pragma: no cover
         raise BootstrapError(f"No se pudo ejecutar el instalador: {e}") from e
     return {"installed": True, "simulated": False, "plan": p, "output": r.stdout[-3000:]}
+
+
+def uninstall_plan(backend: str, settings) -> dict:
+    url, sha = _source(backend, settings)
+    invocation = _UNINSTALL_INVOCATION.get(backend)
+    if invocation is None:
+        raise BootstrapError(f"Backend no válido: «{backend}».")
+    return {
+        "backend": backend,
+        "repo": REPOS.get(backend, ""),
+        "url": url,
+        "checksum_configured": bool(url and sha),
+        "invocation": {
+            "command": ["bash", f"{backend}-install.sh", *invocation["args"]],
+            "env": invocation["env"],
+            "needs_stdin_confirmation": invocation["stdin"] is not None,
+        },
+    }
+
+
+def run_uninstall(backend: str, settings, sandbox: bool) -> dict:
+    url, sha = _source(backend, settings)
+    invocation = _UNINSTALL_INVOCATION.get(backend)
+    if invocation is None:
+        raise BootstrapError(f"Backend no válido: «{backend}».")
+    p = uninstall_plan(backend, settings)
+    if not (url and sha):
+        raise BootstrapError(
+            "Desinstalación llave en mano no configurada: fija la URL (a un commit) y su "
+            "SHA-256 en VPNM_BOOTSTRAP_* para este backend."
+        )
+    if sandbox:
+        return {"uninstalled": False, "simulated": True, "plan": p,
+                "detail": "Sandbox: se descargaría y verificaría el script, sin ejecutarlo."}
+    if not settings.allow_install:
+        raise BootstrapError("Desinstalación deshabilitada. Activa VPNM_ALLOW_INSTALL=true.")
+    if os.geteuid() != 0:
+        raise BootstrapError("La desinstalación requiere ejecutarse como root.")
+
+    dest = Path(settings.bootstrap_dir) / f"{backend}-install.sh"
+    fetch_and_verify(url, sha, dest)  # pragma: no cover - red + root
+    env = {**os.environ, **invocation["env"]}
+    try:  # pragma: no cover - requiere root
+        r = subprocess.run(
+            ["bash", str(dest), *invocation["args"]],
+            env=env, input=invocation["stdin"],
+            capture_output=True, text=True, timeout=900, check=True,
+        )
+    except subprocess.CalledProcessError as e:  # pragma: no cover
+        raise BootstrapError(f"El desinstalador falló: {e.stderr.strip() or e}") from e
+    except (OSError, subprocess.TimeoutExpired) as e:  # pragma: no cover
+        raise BootstrapError(f"No se pudo ejecutar el desinstalador: {e}") from e
+    return {"uninstalled": True, "simulated": False, "plan": p, "output": r.stdout[-3000:]}

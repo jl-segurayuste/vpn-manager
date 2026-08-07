@@ -549,6 +549,42 @@ class TestInstaller:
         assert set(info) >= {"distro", "package_manager", "installed", "is_root", "supported"}
         assert set(info["installed"]) == {"openvpn", "easyrsa", "wireguard"}
 
+    def test_uninstall_plan_apt_remove(self):
+        from vpn_manager.installer import uninstall_plan
+        p = uninstall_plan("openvpn", manager="apt")
+        assert p["supported"] and p["package_manager"] == "apt"
+        assert p["commands"] == [["apt-get", "remove", "-y", "openvpn", "easy-rsa"]]
+
+    def test_uninstall_plan_apt_purge(self):
+        from vpn_manager.installer import uninstall_plan
+        p = uninstall_plan("openvpn", manager="apt", purge=True)
+        assert p["commands"] == [["apt-get", "purge", "-y", "openvpn", "easy-rsa"]]
+
+    def test_uninstall_plan_dnf_sin_purge_distinto_ni_epel(self):
+        from vpn_manager.installer import uninstall_plan
+        # dnf no distingue remove/purge (purge=True no cambia el comando), y
+        # epel-release nunca se quita (es un repo compartido, no algo de la VPN).
+        p_remove = uninstall_plan("openvpn", manager="dnf")
+        p_purge = uninstall_plan("openvpn", manager="dnf", purge=True)
+        assert p_remove["commands"] == p_purge["commands"]
+        assert "epel-release" not in p_remove["packages"]
+
+    def test_uninstall_plan_backend_invalido(self):
+        from vpn_manager.installer import InstallError, uninstall_plan
+        with pytest.raises(InstallError):
+            uninstall_plan("ipsec")
+
+    def test_uninstall_sandbox_simula(self):
+        from vpn_manager.installer import uninstall
+        r = uninstall("wireguard", sandbox=True, allow_install=False)
+        assert r["simulated"] is True and r["uninstalled"] is False
+        assert r["plan"]["backend"] == "wireguard"
+
+    def test_uninstall_deshabilitada_en_prod(self):
+        from vpn_manager.installer import InstallError, uninstall
+        with pytest.raises(InstallError):
+            uninstall("openvpn", sandbox=False, allow_install=False)
+
 
 class TestTotp:
     def test_codigo_valido_e_invalido(self):
@@ -597,11 +633,12 @@ class TestAudit:
 
 
 class TestBootstrap:
-    def _settings(self, tmp_path, url="", sha="", allow=False, sandbox=True):
+    def _settings(self, tmp_path, url="", sha="", allow=False, sandbox=True,
+                  wg_url="", wg_sha=""):
         import types
         return types.SimpleNamespace(
             bootstrap_openvpn_url=url, bootstrap_openvpn_sha256=sha,
-            bootstrap_wireguard_url="", bootstrap_wireguard_sha256="",
+            bootstrap_wireguard_url=wg_url, bootstrap_wireguard_sha256=wg_sha,
             bootstrap_dir=tmp_path / "bootstrap", allow_install=allow,
             openvpn_public_endpoint="vpn.miempresa.com",
         )
@@ -642,6 +679,95 @@ class TestBootstrap:
         from vpn_manager.bootstrap import BootstrapError, run
         with pytest.raises(BootstrapError):
             run("openvpn", self._settings(tmp_path), sandbox=True)
+
+    def test_uninstall_plan_openvpn_usa_subcomando_force(self, tmp_path):
+        # Verifica la invocación exacta contra el commit realmente fijado en
+        # config.py (935e559…): ese script ya trae `uninstall --force`
+        # desatendido de fábrica, sin necesidad de variables de entorno ni stdin.
+        from vpn_manager.bootstrap import uninstall_plan
+        url, sha = self._served(tmp_path)
+        p = uninstall_plan("openvpn", self._settings(tmp_path, url, sha))
+        assert p["checksum_configured"] is True
+        assert p["invocation"]["command"][-2:] == ["uninstall", "--force"]
+        assert p["invocation"]["needs_stdin_confirmation"] is False
+
+    def test_uninstall_plan_wireguard_necesita_confirmacion_por_stdin(self, tmp_path):
+        # El script de WireGuard pineado (832fb98…) sigue siendo el estilo de menú
+        # interactivo: MENU_OPTION=4 salta el menú, pero uninstallWg() hace un
+        # `read` incondicional que SIEMPRE requiere una respuesta por stdin.
+        from vpn_manager.bootstrap import uninstall_plan
+        url, sha = self._served(tmp_path)
+        p = uninstall_plan(
+            "wireguard", self._settings(tmp_path, wg_url=url, wg_sha=sha)
+        )
+        assert p["checksum_configured"] is True
+        assert p["invocation"]["env"] == {"MENU_OPTION": "4"}
+        assert p["invocation"]["needs_stdin_confirmation"] is True
+
+    def test_run_uninstall_sandbox_simula(self, tmp_path):
+        from vpn_manager.bootstrap import run_uninstall
+        url, sha = self._served(tmp_path)
+        r = run_uninstall("openvpn", self._settings(tmp_path, url, sha), sandbox=True)
+        assert r["simulated"] is True and r["uninstalled"] is False
+
+    def test_run_uninstall_sin_configurar_falla(self, tmp_path):
+        from vpn_manager.bootstrap import BootstrapError, run_uninstall
+        with pytest.raises(BootstrapError):
+            run_uninstall("openvpn", self._settings(tmp_path), sandbox=True)
+
+    def test_run_uninstall_openvpn_invoca_subcomando_real(self, tmp_path, monkeypatch):
+        # No ejecuta el script real (requiere root) — intercepta subprocess.run y
+        # comprueba que la línea de comandos es exactamente la esperada.
+        import subprocess as sp
+
+        from vpn_manager import bootstrap
+
+        url, sha = self._served(tmp_path)
+        s = self._settings(tmp_path, url, sha, allow=True)
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["env"] = kwargs.get("env")
+            captured["input"] = kwargs.get("input")
+            return sp.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+        monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+        r = bootstrap.run_uninstall("openvpn", s, sandbox=False)
+
+        assert r["uninstalled"] is True
+        assert captured["cmd"][-2:] == ["uninstall", "--force"]
+        assert captured["input"] is None
+
+    def test_run_uninstall_wireguard_invoca_menu_y_confirma_por_stdin(self, tmp_path, monkeypatch):
+        import subprocess as sp
+
+        from vpn_manager import bootstrap
+
+        url, sha = self._served(tmp_path)
+        s = self._settings(tmp_path, wg_url=url, wg_sha=sha, allow=True)
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["env"] = kwargs.get("env")
+            captured["input"] = kwargs.get("input")
+            return sp.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+        monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+        r = bootstrap.run_uninstall("wireguard", s, sandbox=False)
+
+        assert r["uninstalled"] is True
+        assert captured["env"]["MENU_OPTION"] == "4"
+        assert captured["input"] == "y\n"
+
+    def test_run_uninstall_deshabilitada_en_prod(self, tmp_path):
+        from vpn_manager.bootstrap import BootstrapError, run_uninstall
+        url, sha = self._served(tmp_path)
+        with pytest.raises(BootstrapError):
+            run_uninstall("openvpn", self._settings(tmp_path, url, sha, allow=False), sandbox=False)
 
 
 class TestDelivery:

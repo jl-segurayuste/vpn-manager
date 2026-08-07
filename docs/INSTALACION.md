@@ -81,11 +81,11 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
 | `VPNM_WIREGUARD_PUBLIC_ENDPOINT` | `vpn.ejemplo.local` |
 | `VPNM_WIREGUARD_DNS` | `1.1.1.1` |
 
-### Instalación de servicios (la app instala OpenVPN/WireGuard)
+### Instalación y desinstalación de servicios (la app instala/quita OpenVPN/WireGuard)
 
 | Variable | Por defecto | Descripción |
 |----------|-------------|-------------|
-| `VPNM_ALLOW_INSTALL` | `false` | Interruptor de seguridad. `true` para permitir instalar (además, el panel debe correr como **root**). |
+| `VPNM_ALLOW_INSTALL` | `false` | Interruptor de seguridad. `true` para permitir instalar **o desinstalar** (además, el panel debe correr como **root**). Un único flag gobierna ambos sentidos. |
 | `VPNM_BOOTSTRAP_OPENVPN_URL` | *(pineado a commit `935e559…`)* | URL del script de angristan **fijada a un commit** (`…/<COMMIT>/openvpn-install.sh`). |
 | `VPNM_BOOTSTRAP_OPENVPN_SHA256` | *(pineado)* | SHA-256 de ese script. **Sin él no se ejecuta.** Re-pinear: `curl -sL <url> \| sha256sum`. |
 | `VPNM_BOOTSTRAP_WIREGUARD_URL` / `_SHA256` | *(pineado a `832fb98…`)* | Igual para WireGuard (`angristan/wireguard-install`). |
@@ -93,11 +93,36 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
 > Los defaults vienen **pineados a un commit concreto de angristan + su SHA-256** (verificados
 > el 2026-06-28). Para usar otra versión, sobrescribe URL **y** hash con `VPNM_BOOTSTRAP_*`.
 
-- **Instalar paquetes**: detecta la distro (apt/dnf/yum/pacman/zypper) e instala los
-  paquetes. En RHEL/derivados añade EPEL para OpenVPN.
-- **Instalación completa (llave en mano)**: descarga el script de angristan de la versión
-  fijada, **verifica su SHA-256** y lo ejecuta (configura PKI + server.conf + firewall +
-  primer cliente). En sandbox solo se **simula**.
+- **Instalar / Desinstalar paquetes**: detecta la distro (apt/dnf/yum/pacman/zypper) e
+  instala o quita los paquetes. En RHEL/derivados añade EPEL para OpenVPN al instalar
+  (nunca se quita al desinstalar: es un repositorio compartido del sistema, no algo
+  propio de la VPN). Desinstalar admite `purge=true` (solo con efecto real en apt) para
+  también borrar los ficheros de configuración de los paquetes.
+- **Instalación / Desinstalación completa (llave en mano)**: descarga el script de
+  angristan de la versión fijada, **verifica su SHA-256** y lo ejecuta. Al instalar
+  configura PKI + `server.conf` + firewall + primer cliente; al desinstalar los retira
+  todos. En sandbox ambas direcciones solo se **simulan**.
+
+  La forma de invocar la desinstalación difiere por backend, según lo que el script
+  realmente soporta en el commit fijado (verificado línea a línea contra ambos):
+  - **OpenVPN**: el propio script ya trae un subcomando `uninstall --force`
+    completamente desatendido (no necesita variables de entorno ni stdin).
+  - **WireGuard**: sigue siendo un script de menú interactivo (sin subcomandos). Se fija
+    `MENU_OPTION=4` para saltar el menú y se alimenta `"y\n"` por stdin para la
+    confirmación final, que el script pide siempre sin excepción.
+
+  > **Hallazgo aparte, no relacionado con la desinstalación**: la variable
+  > `AUTO_INSTALL=y` que este proyecto ya usaba para la instalación desatendida de
+  > WireGuard **no existe en el script realmente fijado** (`832fb98…`) — ese camino de
+  > instalación llave en mano probablemente nunca ha completado un arranque
+  > verdaderamente desatendido en producción, se quedaría esperando la primera pregunta
+  > interactiva (IP pública) indefinidamente. No se ha tocado en este cambio (automatizar
+  > correctamente todo el cuestionario de `installQuestions()` es una pieza bastante más
+  > grande, con varias respuestas que dependen del sistema real de destino) — pendiente
+  > como mejora futura si se necesita de verdad instalación llave en mano de WireGuard sin
+  > intervención humana. Mientras tanto, **instalar paquetes + configurar a mano (o desde
+  > el propio panel, sección Configuración) sigue funcionando perfectamente** para
+  > WireGuard; solo el atajo de "todo en un clic" tiene esta limitación conocida.
 
 ### Entrega de configuraciones (guardar / correo)
 

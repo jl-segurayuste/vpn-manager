@@ -102,6 +102,43 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    split-DNS (`PostUp`/`PostDown` de `resolvectl`) ya resuelto en el propio
    `.conf` de WireGuard — no depende de la app en marcha ni de
    NetworkManager. 12 tests nuevos (`tests/test_ha_bundle.py`), CI verde.
+7. **[HECHO 2026-08-08] Desinstalación, en los dos niveles ya existentes de
+   instalación** — el panel se declaraba equivalente a la CLI pero no tenía
+   forma de desinstalar nada; José lo pidió explícitamente al revisar el
+   proyecto antes de publicarlo. `installer.py` gana `uninstall_plan()`/
+   `uninstall()` (mismo modelo de seguridad que instalar: sandbox simula,
+   `VPNM_ALLOW_INSTALL=true` + root en real, `purge=true` opcional para
+   también borrar configuración de paquetes en apt). `bootstrap.py` gana
+   `uninstall_plan()`/`run_uninstall()` para la vía llave en mano, con la
+   invocación exacta **verificada línea a línea contra el contenido real de
+   cada commit ya fijado** (no contra `master`, que puede diferir): OpenVPN
+   (`935e559…`) ya trae un subcomando `uninstall --force` desatendido de
+   fábrica; WireGuard (`832fb98…`) sigue siendo un menú interactivo antiguo,
+   requiere `MENU_OPTION=4` (salta el menú, un `until` ya lo comprueba antes
+   de leer de stdin) + `"y\n"` por stdin (la confirmación de `uninstallWg()`
+   es una lectura incondicional que un `REMOVE` pre-exportado no puede
+   saltarse). Botones "Desinstalar paquetes"/"Desinstalación completa" en la
+   página Sistema, visibles solo cuando el servicio ya está instalado,
+   doble `confirm()` en la vía completa por ser irreversible. 14 tests
+   nuevos, dos de ellos interceptando `subprocess.run` para fijar la línea
+   de comandos/entorno/stdin exactos por backend (no solo que "no lance
+   excepción"). Verificado también en vivo contra el servidor real
+   (`curl` a los 4 endpoints nuevos, sandbox), no solo con tests.
+
+   **Hallazgo aparte, no arreglado en este cambio**: al verificar el script
+   de WireGuard línea a línea se descubrió que `AUTO_INSTALL=y` (la
+   variable que `unattended_env()` ya usaba para intentar una instalación
+   llave en mano desatendida de WireGuard) **no existe en el commit
+   realmente fijado** — ese camino probablemente nunca ha completado un
+   arranque desatendido de verdad en producción, se quedaría esperando la
+   primera pregunta interactiva. Corregirlo de verdad exige automatizar
+   toda la secuencia de preguntas de `installQuestions()` (varias dependen
+   del sistema real de destino, ej. la interfaz de red por defecto) — una
+   pieza notablemente más grande que la desinstalación, deliberadamente
+   fuera de alcance aquí. Documentado en `INSTALACION.md`. Instalar
+   paquetes + configurar a mano (o desde la propia página Configuración)
+   no se ve afectado, solo el atajo de instalación completa en un clic
+   para WireGuard.
 
 ## 6. Datos de entorno (verificado 2026-06-21)
 

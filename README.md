@@ -32,6 +32,17 @@ su configuración y retirarles el acceso.
   DNS de conmutación correcto (split-DNS vía `PostUp`/`PostDown`) para que los
   nombres internos sigan resolviendo tras el failover — ver
   [`vpn_manager/ha_bundle.py`](vpn_manager/ha_bundle.py).
+- **Instalación y desinstalación, en dos niveles**, ambos con el mismo modelo de
+  seguridad (sandbox por defecto, `VPNM_ALLOW_INSTALL=true` explícito, root
+  requerido):
+  - **Solo paquetes** (`vpn_manager/installer.py`): detecta la distro/gestor
+    (apt/dnf/yum/pacman/zypper) e instala o quita únicamente los paquetes del
+    sistema (`apt purge` opcional para limpiar también su configuración).
+  - **Llave en mano** (`vpn_manager/bootstrap.py`): reutiliza los instaladores
+    de referencia de [angristan](https://github.com/angristan) (descargados de
+    una URL fijada a un commit concreto y verificados por SHA-256 antes de
+    ejecutarse), que configuran o retiran el servidor entero (PKI,
+    `server.conf`, firewall/NAT, primer cliente) de una sola vez.
 
 ## Seguridad
 

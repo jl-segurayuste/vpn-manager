@@ -508,11 +508,14 @@ async function loadSystem(){
     ];
     document.getElementById('sys-services').innerHTML = svc.map(x=>{
       const inst = x.k==='openvpn' ? (s.installed.openvpn) : (s.installed.wireguard);
-      const canInstall = can('system:install') && !inst;
+      const canManage = can('system:install');
       let btn = '';
-      if(canInstall){
+      if(canManage && !inst){
         const pkg = s.supported ? `<button class="btn" onclick="installService('${x.k}')">Instalar paquetes</button>` : '<span class="sub">distro no compatible</span>';
         btn = `${pkg}<button class="btn primary" onclick="bootstrapService('${x.k}')">Instalación completa</button>`;
+      } else if(canManage && inst){
+        btn = `<button class="btn danger" onclick="uninstallService('${x.k}')">Desinstalar paquetes</button>
+          <button class="btn danger" onclick="bootstrapUninstallService('${x.k}')">Desinstalación completa</button>`;
       }
       return `<div class="row"><div><div class="name">${x.label}</div><div class="meta">${x.sub}</div></div>
         <div class="right"><span class="state ${inst?'s-ok':'s-warn'}"><span class="dot ${inst?'ok':'warn'}"></span>${inst?'Instalado':'No instalado'}</span></div>
@@ -561,6 +564,38 @@ async function installService(backend){
     const d = await r.json().catch(()=>({}));
     if(!r.ok){ toast(d.detail||'No se pudo instalar.'); return; }
     toast(d.simulated ? 'Sandbox: instalación simulada (ver plan) ✓' : 'Instalado ✓');
+    loadSystem();
+  }catch(e){ toast('No se pudo conectar con el servidor.'); }
+}
+async function bootstrapUninstallService(backend){
+  let plan;
+  try{ plan = await fetch('/api/system/bootstrap/'+backend+'/uninstall/plan').then(r=>r.json()); }
+  catch(e){ toast('No se pudo obtener el plan.'); return; }
+  if(!plan.checksum_configured){
+    alert(`La desinstalación completa de ${backend.toUpperCase()} no está configurada.\n\nFija el origen pineado y su SHA-256 en el .env (las mismas VPNM_BOOTSTRAP_${backend.toUpperCase()}_* que usa la instalación).`);
+    return;
+  }
+  if(!confirm(`⚠️ DESINSTALACIÓN COMPLETA de ${backend.toUpperCase()} con el script de ${plan.repo}.\n\nEsto borra el servicio, su configuración y su PKI. NO se puede deshacer.\n\n¿Seguro que quieres continuar?`)) return;
+  if(!confirm(`Última confirmación: se va a desinstalar ${backend.toUpperCase()} por completo de este servidor. ¿Continuar?`)) return;
+  try{
+    const r = await fetch('/api/system/bootstrap/'+backend+'/uninstall',{method:'POST'});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.detail||'No se pudo desinstalar.'); return; }
+    toast(d.simulated ? 'Sandbox: desinstalación completa simulada ✓' : 'Servidor desinstalado ✓');
+    loadSystem();
+  }catch(e){ toast('No se pudo conectar con el servidor.'); }
+}
+async function uninstallService(backend){
+  let plan;
+  try{ plan = await fetch('/api/system/uninstall/'+backend+'/plan').then(r=>r.json()); }
+  catch(e){ toast('No se pudo obtener el plan.'); return; }
+  const cmds = (plan.commands||[]).map(c=>'  '+c.join(' ')).join('\n');
+  if(!confirm(`⚠️ Se desinstalará ${backend.toUpperCase()} con:\n\n${cmds}\n\nLa configuración/PKI existente NO se toca (solo los paquetes). ¿Continuar?`)) return;
+  try{
+    const r = await fetch('/api/system/uninstall/'+backend,{method:'POST'});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.detail||'No se pudo desinstalar.'); return; }
+    toast(d.simulated ? 'Sandbox: desinstalación simulada (ver plan) ✓' : 'Desinstalado ✓');
     loadSystem();
   }catch(e){ toast('No se pudo conectar con el servidor.'); }
 }

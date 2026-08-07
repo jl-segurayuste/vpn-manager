@@ -538,6 +538,48 @@ def system_bootstrap(backend: str, admin: str = Depends(require_perm("system:ins
     return result
 
 
+@app.get("/api/system/uninstall/{backend}/plan", dependencies=_PROTECTED)
+def system_uninstall_plan(backend: str, purge: bool = False) -> dict:
+    try:
+        return installer.uninstall_plan(backend, purge=purge)
+    except installer.InstallError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@app.post("/api/system/uninstall/{backend}")
+def system_uninstall(
+    backend: str, purge: bool = False, admin: str = Depends(require_perm("system:install"))
+) -> dict:
+    try:
+        result = installer.uninstall(backend, settings.sandbox, settings.allow_install, purge=purge)
+    except installer.InstallError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    log.info("desinstalación de «%s» solicitada por %s (purge=%s, simulada=%s)", backend, admin,
+             purge, result.get("simulated"))
+    return result
+
+
+@app.get("/api/system/bootstrap/{backend}/uninstall/plan", dependencies=_PROTECTED)
+def system_bootstrap_uninstall_plan(backend: str) -> dict:
+    try:
+        return bootstrap.uninstall_plan(backend, settings)
+    except bootstrap.BootstrapError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@app.post("/api/system/bootstrap/{backend}/uninstall")
+def system_bootstrap_uninstall(
+    backend: str, admin: str = Depends(require_perm("system:install"))
+) -> dict:
+    try:
+        result = bootstrap.run_uninstall(backend, settings, settings.sandbox)
+    except bootstrap.BootstrapError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    log.info("desinstalación llave en mano de «%s» por %s (simulada=%s)", backend, admin,
+             result.get("simulated"))
+    return result
+
+
 # ── WireGuard ────────────────────────────────────────────────────────────────
 @app.get("/api/wireguard/status", response_model=ServiceStatus, dependencies=_PROTECTED)
 def wg_status() -> ServiceStatus:
