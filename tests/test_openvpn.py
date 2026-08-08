@@ -480,8 +480,8 @@ class TestRolesApi:
 class TestPreflight:
     def _s(self, **kw):
         import types
-        base = dict(sandbox=True, admin_password_hash="", secret_key="",
-                    cookie_secure=False, allow_install=False)
+        base = {"sandbox": True, "admin_password_hash": "", "secret_key": "",
+                "cookie_secure": False, "allow_install": False}
         base.update(kw)
         return types.SimpleNamespace(**base)
 
@@ -606,6 +606,7 @@ class TestTotp:
 class TestAudit:
     def test_persiste_y_lee(self, tmp_path):
         import logging
+
         from vpn_manager.audit import attach, recent
         path = tmp_path / "audit.jsonl"
         attach("vpn_manager.audit.test", path)
@@ -620,6 +621,7 @@ class TestAudit:
 
     def test_filtros_busqueda_y_nivel(self, tmp_path):
         import logging
+
         from vpn_manager.audit import attach, recent
         path = tmp_path / "audit.jsonl"
         attach("vpn_manager.audit.test2", path)

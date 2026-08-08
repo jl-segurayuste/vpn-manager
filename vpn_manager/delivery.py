@@ -78,6 +78,6 @@ def send_email(content: str, filename: str, to_addr: str, settings, sandbox: boo
             if settings.smtp_user:
                 smtp.login(settings.smtp_user, settings.smtp_password)
             smtp.send_message(msg)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise DeliveryError(f"No se pudo enviar el correo: {e}") from e
     return {"sent": True, "simulated": False, "to": to_addr}

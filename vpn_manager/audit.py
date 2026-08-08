@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -26,7 +26,7 @@ class JsonlAuditHandler(logging.Handler):
             if self.path.exists() and self.path.stat().st_size > self.max_bytes:
                 self.path.replace(self.path.with_name(self.path.name + ".1"))
             entry = {
-                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "ts": datetime.now(UTC).isoformat(timespec="seconds"),
                 "level": record.levelname,
                 "message": record.getMessage(),
             }

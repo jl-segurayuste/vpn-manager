@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .base import (
@@ -41,7 +41,7 @@ def _parse_asn1_time(raw: str) -> datetime | None:
     raw = raw.strip()
     fmt = "%y%m%d%H%M%SZ" if len(raw) == 13 else "%Y%m%d%H%M%SZ"
     try:
-        return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -127,7 +127,7 @@ class OpenVpnBackend(VpnBackend):
         try:
             out = subprocess.run(
                 ["systemctl", "is-active", self.service],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, timeout=5, check=False,
             )
             state = out.stdout.strip()
             return ServiceStatus(backend=self.name, active=state == "active", detail=state)
@@ -194,7 +194,7 @@ class OpenVpnBackend(VpnBackend):
                 since = None
                 try:
                     since = datetime.strptime(c[4], "%Y-%m-%d %H:%M:%S").replace(
-                        tzinfo=timezone.utc
+                        tzinfo=UTC
                     )
                 except ValueError:
                     pass
@@ -228,7 +228,7 @@ class OpenVpnBackend(VpnBackend):
             )
 
         # Sandbox: registra la entrada en index.txt y genera el .ovpn.
-        expiry = datetime.now(timezone.utc) + timedelta(days=365 * _CLIENT_VALID_YEARS)
+        expiry = datetime.now(UTC) + timedelta(days=365 * _CLIENT_VALID_YEARS)
         serial = self._next_serial()
         lines = self._index_lines()
         lines.append(f"V\t{self._asn1(expiry)}\t\t{serial}\tunknown\t/CN={name}")
@@ -253,7 +253,7 @@ class OpenVpnBackend(VpnBackend):
             self._easyrsa("revoke", name, batch=True)
             self._easyrsa("gen-crl")
         else:
-            now = self._asn1(datetime.now(timezone.utc))
+            now = self._asn1(datetime.now(UTC))
             parts = parts[:]
             parts[0] = "R"
             parts[2] = now  # fecha de revocación
@@ -284,7 +284,7 @@ class OpenVpnBackend(VpnBackend):
             found = self._find(name)
             parts = found[1] if found else parts
         else:
-            expiry = datetime.now(timezone.utc) + timedelta(days=365 * _CLIENT_VALID_YEARS)
+            expiry = datetime.now(UTC) + timedelta(days=365 * _CLIENT_VALID_YEARS)
             parts = parts[:]
             parts[0] = "V"
             parts[1] = self._asn1(expiry)
@@ -364,7 +364,7 @@ class OpenVpnBackend(VpnBackend):
         pushes: list[str] = []
         for raw in self.server_conf.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
-            if not line or line.startswith("#") or line.startswith(";"):
+            if not line or line.startswith(("#", ";")):
                 continue
             key, _, value = line.partition(" ")
             key = key.strip()
@@ -426,7 +426,7 @@ class OpenVpnBackend(VpnBackend):
         try:  # pragma: no cover - depende del entorno real
             out = subprocess.run(
                 ["journalctl", "-u", self.service, "-n", str(lines), "--no-pager"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, timeout=10, check=False,
             )
             return out.stdout.splitlines()
         except Exception as e:  # noqa: BLE001  # pragma: no cover

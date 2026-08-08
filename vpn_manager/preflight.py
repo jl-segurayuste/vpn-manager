@@ -7,6 +7,7 @@ de exponer el panel.
 """
 from __future__ import annotations
 
+
 # level: ok | info | warn
 def checks(settings) -> list[dict]:
     out: list[dict] = []

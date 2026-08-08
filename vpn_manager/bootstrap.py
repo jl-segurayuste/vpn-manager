@@ -72,9 +72,9 @@ def fetch_and_verify(url: str, sha256_expected: str, dest: Path) -> Path:
     if not url.startswith(("https://", "file://")):
         raise BootstrapError("La URL debe ser https://.")
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 (esquema validado)
+        with urllib.request.urlopen(url, timeout=30) as resp:
             data = resp.read()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise BootstrapError(f"No se pudo descargar el script: {e}") from e
     actual = hashlib.sha256(data).hexdigest()
     if not hmac.compare_digest(actual, sha256_expected.strip().lower()):

@@ -16,7 +16,7 @@ import ipaddress
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .base import (
@@ -50,7 +50,7 @@ def _handshake_to_dt(text: str) -> datetime | None:
         total += int(num) * _UNIT_SECONDS[unit]
     if total == 0 and "ago" not in text:
         return None
-    return datetime.now(timezone.utc) - timedelta(seconds=total)
+    return datetime.now(UTC) - timedelta(seconds=total)
 
 
 def _transfer_to_bytes(text: str) -> int:
@@ -159,7 +159,7 @@ class WireGuardBackend(VpnBackend):
         try:
             out = subprocess.run(
                 ["systemctl", "is-active", self.service],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, timeout=5, check=False,
             )
             state = out.stdout.strip()
             return ServiceStatus(backend=self.name, active=state == "active", detail=state)
