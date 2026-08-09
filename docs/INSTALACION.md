@@ -103,26 +103,47 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
   configura PKI + `server.conf` + firewall + primer cliente; al desinstalar los retira
   todos. En sandbox ambas direcciones solo se **simulan**.
 
-  La forma de invocar la desinstalación difiere por backend, según lo que el script
-  realmente soporta en el commit fijado (verificado línea a línea contra ambos):
-  - **OpenVPN**: el propio script ya trae un subcomando `uninstall --force`
-    completamente desatendido (no necesita variables de entorno ni stdin).
-  - **WireGuard**: sigue siendo un script de menú interactivo (sin subcomandos). Se fija
-    `MENU_OPTION=4` para saltar el menú y se alimenta `"y\n"` por stdin para la
-    confirmación final, que el script pide siempre sin excepción.
+  La forma de invocar tanto instalar como desinstalar difiere por backend, según lo
+  que el script realmente soporta en el commit fijado (verificado línea a línea
+  contra ambos, no contra `master`):
+  - **OpenVPN**: el propio script ya trae subcomandos (`uninstall --force` para
+    desinstalar) completamente desatendidos de fábrica — no necesita variables de
+    entorno ni stdin más allá de las ya documentadas para instalar.
+  - **WireGuard**: sigue siendo un script de menú interactivo antiguo, sin
+    subcomandos. Para desinstalar, `MENU_OPTION=4` salta el menú y se alimenta
+    `"y\n"` por stdin para la confirmación final, que el script pide siempre sin
+    excepción. Para **instalar**, la variable `AUTO_INSTALL=y` que este proyecto
+    usaba antes **no existe realmente en el script fijado** (`832fb98…`) — ese
+    hallazgo llevó a mapear línea a línea todo `installQuestions()` +
+    `newClient()` (esta última se ejecuta automáticamente al final, no hay forma
+    de saltarla) y construir la automatización real:
+    - Las preguntas protegidas por un `until <regex-válida>; do read; done` se
+      saltan fijando la variable correspondiente por entorno de antemano
+      (interfaz WireGuard, IPv4/IPv6 del servidor, puerto — `51820`, el estándar
+      de WireGuard, en vez del aleatorio que ofrece el script —, DNS, rango de
+      IPs permitidas, y el nombre + "no existe todavía" del primer cliente).
+    - Dos preguntas son lecturas incondicionales que ignoran cualquier variable
+      ya exportada (la IP/dominio público, y "Press any key to continue..."):
+      se alimentan por stdin.
+    - Dos más, del alta automática del primer cliente, combinan validación con
+      un cálculo real dentro del propio bucle — saltarlas por variable dejaría
+      la IP del cliente vacía. Se responde por stdin con `"2"` (el primer hueco
+      libre, `.1` es el propio servidor — determinista en una instalación
+      recién creada, no una suposición).
+    - La interfaz de red pública (`SERVER_PUB_NIC`) no se fija a un valor
+      inventado: se detecta en Python en el mismo host, justo antes de invocar
+      el script (mismo cálculo que hace el propio script). Si no se puede
+      detectar, la instalación **falla explícitamente antes de lanzar el
+      script**, en vez de arriesgarse a un proceso colgado esperando un stdin
+      que nunca llegaría.
 
-  > **Hallazgo aparte, no relacionado con la desinstalación**: la variable
-  > `AUTO_INSTALL=y` que este proyecto ya usaba para la instalación desatendida de
-  > WireGuard **no existe en el script realmente fijado** (`832fb98…`) — ese camino de
-  > instalación llave en mano probablemente nunca ha completado un arranque
-  > verdaderamente desatendido en producción, se quedaría esperando la primera pregunta
-  > interactiva (IP pública) indefinidamente. No se ha tocado en este cambio (automatizar
-  > correctamente todo el cuestionario de `installQuestions()` es una pieza bastante más
-  > grande, con varias respuestas que dependen del sistema real de destino) — pendiente
-  > como mejora futura si se necesita de verdad instalación llave en mano de WireGuard sin
-  > intervención humana. Mientras tanto, **instalar paquetes + configurar a mano (o desde
-  > el propio panel, sección Configuración) sigue funcionando perfectamente** para
-  > WireGuard; solo el atajo de "todo en un clic" tiene esta limitación conocida.
+    Verificado en vivo contra un host real (detección de interfaz correcta,
+    variables de entorno y stdin exactos) y con tests que interceptan
+    `subprocess.run` para fijar la invocación exacta — pero **no se ha
+    ejecutado el script de angristan de verdad de principio a fin** (instalaría
+    WireGuard, paquetes y reglas de firewall reales; ese último tramo solo
+    puede probarse de forma responsable en un servidor real desechable, no en
+    una máquina de desarrollo).
 
 ### Entrega de configuraciones (guardar / correo)
 

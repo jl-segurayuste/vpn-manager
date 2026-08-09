@@ -125,20 +125,51 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    excepción"). Verificado también en vivo contra el servidor real
    (`curl` a los 4 endpoints nuevos, sandbox), no solo con tests.
 
-   **Hallazgo aparte, no arreglado en este cambio**: al verificar el script
-   de WireGuard línea a línea se descubrió que `AUTO_INSTALL=y` (la
-   variable que `unattended_env()` ya usaba para intentar una instalación
-   llave en mano desatendida de WireGuard) **no existe en el commit
-   realmente fijado** — ese camino probablemente nunca ha completado un
-   arranque desatendido de verdad en producción, se quedaría esperando la
-   primera pregunta interactiva. Corregirlo de verdad exige automatizar
-   toda la secuencia de preguntas de `installQuestions()` (varias dependen
-   del sistema real de destino, ej. la interfaz de red por defecto) — una
-   pieza notablemente más grande que la desinstalación, deliberadamente
-   fuera de alcance aquí. Documentado en `INSTALACION.md`. Instalar
-   paquetes + configurar a mano (o desde la propia página Configuración)
-   no se ve afectado, solo el atajo de instalación completa en un clic
-   para WireGuard.
+8. **[HECHO 2026-08-09] Instalación llave en mano de WireGuard, realmente
+   desatendida** — José insistió en que el panel debía ser 100% equivalente a
+   la CLI, sin excepciones; cerraba el hallazgo dejado pendiente en el punto
+   anterior. `AUTO_INSTALL=y` (lo que `unattended_env()` usaba antes para
+   WireGuard) no existe en el commit realmente fijado (`832fb98…`) — ese
+   camino probablemente nunca había completado un arranque desatendido de
+   verdad, se quedaba esperando la primera pregunta interactiva
+   indefinidamente. Arreglado mapeando línea a línea todo
+   `installQuestions()` + `newClient()` (esta última se ejecuta
+   automáticamente al final de la instalación, no hay forma de saltarla):
+   - Las preguntas protegidas por `until <regex-válida>; do read; done` se
+     saltan fijando la variable correspondiente por entorno de antemano —
+     interfaz WireGuard, IPv4/IPv6 del servidor, puerto (51820, el estándar
+     de WireGuard, no el aleatorio que ofrece el script), DNS, rango de IPs,
+     y nombre + "no existe todavía" del primer cliente (`CLIENT_EXISTS=0` es
+     seguro de fijar a ciegas: solo se alcanza en una instalación recién
+     creada, sin clientes previos posibles).
+   - Dos preguntas son lecturas incondicionales que ignoran cualquier
+     variable ya exportada (IP/dominio público, "Press any key to
+     continue..."): se alimentan por stdin.
+   - Dos más, del alta automática del primer cliente, combinan validación
+     con un cálculo real dentro del propio cuerpo del bucle — saltarlas por
+     variable dejaría la IP del cliente vacía. Se responde por stdin con
+     `"2"` (primer hueco libre tras el propio servidor, determinista en una
+     instalación recién creada, no una suposición).
+   - `SERVER_PUB_NIC` (interfaz de red pública) nunca se inventa: se detecta
+     en Python en el mismo host (`_detect_public_interface()`, sin
+     `shell=True`, replica la misma consulta de ruta por defecto que hace el
+     propio script) justo antes de invocarlo. Si no se puede detectar, la
+     instalación falla explícitamente ANTES de lanzar el script, en vez de
+     arriesgarse a un `until` colgado esperando un stdin que nunca llegaría.
+
+   7 tests nuevos (detección de interfaz mockeada y casos límite, contenido
+   exacto de variables de entorno y stdin, fallo explícito sin interfaz,
+   invocación completa de `subprocess.run` interceptada). Verificado en vivo
+   contra un host real: `_detect_public_interface()` devolvió correctamente
+   la interfaz WiFi real de la máquina de desarrollo, y `GET
+   /api/system/bootstrap/wireguard/plan` mostró el entorno completo y
+   correcto vía la API real, no solo en tests. **No se ejecutó el script de
+   angristan de principio a fin** (instalaría WireGuard, paquetes y reglas de
+   firewall reales en la máquina) — ese último tramo solo puede verificarse
+   de forma responsable en un servidor real desechable, documentado como tal
+   en `INSTALACION.md`, no una carencia oculta.
+
+## 6. Datos de entorno (verificado 2026-06-21)
 
 ## 6. Datos de entorno (verificado 2026-06-21)
 

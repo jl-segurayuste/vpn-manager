@@ -643,6 +643,9 @@ class TestBootstrap:
             bootstrap_wireguard_url=wg_url, bootstrap_wireguard_sha256=wg_sha,
             bootstrap_dir=tmp_path / "bootstrap", allow_install=allow,
             openvpn_public_endpoint="vpn.miempresa.com",
+            wireguard_interface="wg0",
+            wireguard_public_endpoint="vpn.miempresa.com",
+            wireguard_dns="1.1.1.1",
         )
 
     def _served(self, tmp_path):
@@ -681,6 +684,104 @@ class TestBootstrap:
         from vpn_manager.bootstrap import BootstrapError, run
         with pytest.raises(BootstrapError):
             run("openvpn", self._settings(tmp_path), sandbox=True)
+
+    def test_detect_public_interface_parsea_ip_route(self, monkeypatch):
+        import subprocess as sp
+
+        from vpn_manager import bootstrap
+
+        def fake_run(cmd, **kwargs):
+            return sp.CompletedProcess(
+                cmd, 0,
+                stdout="default via 192.168.1.1 dev eth0 proto dhcp metric 100\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+        assert bootstrap._detect_public_interface() == "eth0"
+
+    def test_detect_public_interface_sin_ruta_por_defecto(self, monkeypatch):
+        import subprocess as sp
+
+        from vpn_manager import bootstrap
+
+        monkeypatch.setattr(
+            bootstrap.subprocess, "run",
+            lambda cmd, **kwargs: sp.CompletedProcess(cmd, 0, stdout="", stderr=""),
+        )
+        assert bootstrap._detect_public_interface() is None
+
+    def test_unattended_env_wireguard_incluye_todo_lo_necesario(self, tmp_path, monkeypatch):
+        from vpn_manager import bootstrap
+
+        monkeypatch.setattr(bootstrap, "_detect_public_interface", lambda: "eth0")
+        env = bootstrap.unattended_env("wireguard", self._settings(tmp_path))
+
+        # Todo lo protegido por un `until <regex>` en el script real debe venir ya
+        # resuelto, para que ese `read` nunca llegue a ejecutarse.
+        assert env["SERVER_PUB_NIC"] == "eth0"
+        assert env["SERVER_WG_NIC"] == "wg0"
+        assert env["CLIENT_DNS_1"] == "1.1.1.1"
+        assert env["CLIENT_EXISTS"] == "0"
+        assert env["CLIENT_NAME"]
+
+    def test_unattended_env_wireguard_omite_nic_si_no_detectada(self, tmp_path, monkeypatch):
+        from vpn_manager import bootstrap
+
+        monkeypatch.setattr(bootstrap, "_detect_public_interface", lambda: None)
+        env = bootstrap.unattended_env("wireguard", self._settings(tmp_path))
+        assert "SERVER_PUB_NIC" not in env
+
+    def test_wireguard_install_stdin_orden_exacto(self, tmp_path):
+        from vpn_manager.bootstrap import _wireguard_install_stdin
+        s = self._settings(tmp_path)
+        assert _wireguard_install_stdin(s) == "vpn.miempresa.com\n\n2\n2\n"
+
+    def test_run_wireguard_sin_interfaz_falla_antes_de_lanzar_el_script(
+        self, tmp_path, monkeypatch
+    ):
+        # Fail-closed: sin interfaz detectada, run() no debe siquiera intentar
+        # ejecutar el script (evita el `until` colgado esperando stdin).
+        from vpn_manager import bootstrap
+        from vpn_manager.bootstrap import BootstrapError
+
+        url, sha = self._served(tmp_path)
+        s = self._settings(tmp_path, wg_url=url, wg_sha=sha, allow=True)
+        monkeypatch.setattr(bootstrap, "_detect_public_interface", lambda: None)
+        monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+
+        called = []
+        monkeypatch.setattr(
+            bootstrap.subprocess, "run", lambda *a, **k: called.append(1)
+        )
+        with pytest.raises(BootstrapError, match="interfaz de red pública"):
+            bootstrap.run("wireguard", s, sandbox=False)
+        assert called == []  # nunca llegó a invocar el script
+
+    def test_run_wireguard_invoca_con_env_y_stdin_completos(self, tmp_path, monkeypatch):
+        import subprocess as sp
+
+        from vpn_manager import bootstrap
+
+        url, sha = self._served(tmp_path)
+        s = self._settings(tmp_path, wg_url=url, wg_sha=sha, allow=True)
+        monkeypatch.setattr(bootstrap, "_detect_public_interface", lambda: "eth0")
+        monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["env"] = kwargs.get("env")
+            captured["input"] = kwargs.get("input")
+            return sp.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+        r = bootstrap.run("wireguard", s, sandbox=False)
+
+        assert r["installed"] is True
+        assert captured["env"]["SERVER_PUB_NIC"] == "eth0"
+        assert captured["env"]["SERVER_WG_NIC"] == "wg0"
+        assert captured["input"] == "vpn.miempresa.com\n\n2\n2\n"
 
     def test_uninstall_plan_openvpn_usa_subcomando_force(self, tmp_path):
         # Verifica la invocación exacta contra el commit realmente fijado en
