@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from . import auth
+from . import auth, totp
 
 # ── Roles y permisos ───────────────────────────────────────────────────────
 PERMISSIONS: dict[str, set[str]] = {
@@ -114,6 +114,31 @@ class UserStore:
             self.users[username].pop("totp_secret", None)
             self.users[username]["totp_enabled"] = False
             self._save()
+
+    def verify_totp(self, username: str, code: str, window: int = 1, at: float | None = None) -> bool:
+        """Valida un código TOTP e impide reutilizarlo. Bug real encontrado
+        2026-08-09: `totp.verify()` es sin estado -- el mismo código válido
+        (visto en un log, por encima del hombro...) se podía reenviar un
+        número ilimitado de veces y siempre se aceptaba, anulando la garantía
+        anti-repetición que es la razón de ser de TOTP frente a una
+        contraseña estática. Se registra el último paso consumido por
+        usuario y se rechaza cualquier código que no sea estrictamente
+        posterior."""
+        u = self.users.get(username)
+        if not u:
+            return False
+        secret = u.get("totp_secret")
+        if not secret:
+            return False
+        step = totp.find_matching_step(secret, code, window=window, at=at)
+        if step is None:
+            return False
+        last = u.get("totp_last_counter")
+        if last is not None and step <= last:
+            return False
+        u["totp_last_counter"] = step
+        self._save()
+        return True
 
     def _admins(self) -> list[str]:
         return [k for k, v in self.users.items() if v["role"] == "admin"]

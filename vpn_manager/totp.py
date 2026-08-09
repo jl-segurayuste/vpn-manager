@@ -35,16 +35,30 @@ def now_code(secret: str, at: float | None = None) -> str:
     return _hotp(secret, int((at if at is not None else time.time()) // _STEP))
 
 
-def verify(secret: str, code: str, window: int = 1, at: float | None = None) -> bool:
-    """Valida el código admitiendo ±`window` pasos (tolerancia de reloj)."""
+def find_matching_step(secret: str, code: str, window: int = 1, at: float | None = None) -> int | None:
+    """Como `verify`, pero devuelve el número de paso (step) que coincidió, o
+    None si ninguno lo hizo. Se necesita por separado porque `verify` es sin
+    estado (no sabe si ese código ya se usó antes) -- el llamador que sí
+    lleve el estado (ver `UserStore.verify_totp`) puede comparar este step
+    contra el último consumido para impedir reutilizar el mismo código dos
+    veces, que es justo la garantía anti-repetición que se supone que da
+    TOTP frente a una contraseña estática."""
     if not secret or not code:
-        return False
+        return None
     code = code.strip().replace(" ", "")
     counter = int((at if at is not None else time.time()) // _STEP)
-    return any(
-        hmac.compare_digest(_hotp(secret, counter + w), code)
-        for w in range(-window, window + 1)
-    )
+    for w in range(-window, window + 1):
+        step = counter + w
+        if hmac.compare_digest(_hotp(secret, step), code):
+            return step
+    return None
+
+
+def verify(secret: str, code: str, window: int = 1, at: float | None = None) -> bool:
+    """Valida el código admitiendo ±`window` pasos (tolerancia de reloj). No
+    protege contra reutilización del mismo código -- para eso, usar
+    `UserStore.verify_totp`, que sí registra el último paso consumido."""
+    return find_matching_step(secret, code, window=window, at=at) is not None
 
 
 def provisioning_uri(secret: str, account: str, issuer: str = "VPN Manager") -> str:

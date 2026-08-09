@@ -279,7 +279,7 @@ def login(
     # Segundo paso: la sesión espera un código TOTP.
     pending = request.session.get("pending_2fa")
     if pending:
-        if totp.verify(_users.totp_secret(pending) or "", code):
+        if _users.verify_totp(pending, code):
             _throttle.reset(ip)
             request.session.clear()
             request.session["user"] = pending
@@ -353,7 +353,7 @@ def me_2fa_setup(user: str = Depends(require_user)) -> dict:
 
 @app.post("/api/me/2fa/enable")
 def me_2fa_enable(body: TwoFACode, user: str = Depends(require_user)) -> dict:
-    if not totp.verify(_users.totp_secret(user) or "", body.code):
+    if not _users.verify_totp(user, body.code):
         raise HTTPException(status_code=422, detail="Código incorrecto. Vuelve a intentarlo.")
     try:
         _users.enable_totp(user)
@@ -367,7 +367,7 @@ def me_2fa_enable(body: TwoFACode, user: str = Depends(require_user)) -> dict:
 def me_2fa_disable(body: TwoFACode, user: str = Depends(require_user)) -> dict:
     if not _users.totp_enabled(user):
         raise HTTPException(status_code=422, detail="La verificación en dos pasos no está activa.")
-    if not totp.verify(_users.totp_secret(user) or "", body.code):
+    if not _users.verify_totp(user, body.code):
         raise HTTPException(status_code=422, detail="Código incorrecto.")
     _users.disable_totp(user)
     log.info("2FA desactivado por %s", user)

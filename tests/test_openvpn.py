@@ -439,6 +439,8 @@ class TestRolesApi:
         assert c.delete("/api/users/admin").status_code == 422       # no a sí mismo
 
     def test_flujo_2fa(self):
+        import time
+
         from vpn_manager.totp import now_code
         c = self._login("admin", "admin123")
         d = c.post("/api/me/2fa/setup").json()
@@ -452,7 +454,10 @@ class TestRolesApi:
         c2 = TestClient(app)
         c2.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False)
         assert c2.get("/api/me").status_code == 401            # aún no autenticado
-        c2.post("/login", data={"code": now_code(d["secret"])}, follow_redirects=False)
+        # el código de activación ya se consumió (anti-repetición) -- el
+        # login usa el siguiente paso temporal, como pasaría de verdad al
+        # iniciar sesión más tarde.
+        c2.post("/login", data={"code": now_code(d["secret"], at=time.time() + 30)}, follow_redirects=False)
         assert c2.get("/api/me").status_code == 200            # tras el código, dentro
 
     def test_auditoria_solo_admin(self):
