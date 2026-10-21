@@ -68,11 +68,11 @@ class TestRenderWireguardConfWithDns:
 class TestRenderFailoverScript:
     def test_incluye_los_hosts_y_puerto_de_salud(self):
         cfg = FailoverConfig(
-            name="alice", health_check_hosts=["192.168.1.64", "192.168.1.60"],
+            name="alice", health_check_hosts=["10.10.0.64", "10.10.0.60"],
             health_check_port=8006,
         )
         script = render_failover_script(cfg)
-        assert "HEALTH_HOSTS=(192.168.1.64 192.168.1.60)" in script
+        assert "HEALTH_HOSTS=(10.10.0.64 10.10.0.60)" in script
         assert "HEALTH_PORT=8006" in script
 
     def test_limpia_interfaz_existente_antes_de_wg_quick_up(self):

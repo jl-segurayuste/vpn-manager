@@ -342,11 +342,11 @@ class TestWireGuardApi:
     def test_flujo_wireguard_por_api(self):
         assert len(self.client.get("/api/wireguard/clients").json()) == 3
         assert len(self.client.get("/api/wireguard/connections").json()) == 2
-        r = self.client.post("/api/wireguard/clients", json={"name": "movil-jose"})
+        r = self.client.post("/api/wireguard/clients", json={"name": "movil-demo"})
         assert r.status_code == 201
-        r = self.client.get("/api/wireguard/clients/movil-jose/qr")
+        r = self.client.get("/api/wireguard/clients/movil-demo/qr")
         assert r.status_code == 200 and "svg" in r.headers["content-type"]
-        assert self.client.post("/api/wireguard/clients/movil-jose/revoke").status_code == 200
+        assert self.client.post("/api/wireguard/clients/movil-demo/revoke").status_code == 200
 
     def test_server_y_login(self):
         d = self.client.get("/api/wireguard/server").json()
@@ -459,6 +459,41 @@ class TestRolesApi:
         # iniciar sesión más tarde.
         c2.post("/login", data={"code": now_code(d["secret"], at=time.time() + 30)}, follow_redirects=False)
         assert c2.get("/api/me").status_code == 200            # tras el código, dentro
+
+    def test_solo_lectura_no_descarga_configuraciones(self):
+        """Las configuraciones llevan la clave privada del cliente: con ellas se entra en la red."""
+        oper = self._login("oper", "operario1")
+        name = next(c["name"] for c in oper.get("/api/openvpn/clients").json() if c["status"] == "valid")
+        wg = next(c["name"] for c in oper.get("/api/wireguard/clients").json() if c["status"] == "valid")
+        assert oper.get(f"/api/openvpn/clients/{name}/config").status_code == 200
+        visor = self._login("visor", "visor1234")
+        assert visor.get("/api/openvpn/clients").status_code == 200          # ver la lista, sí
+        assert visor.get(f"/api/openvpn/clients/{name}/config").status_code == 403
+        assert visor.get(f"/api/wireguard/clients/{wg}/config").status_code == 403
+        assert visor.get(f"/api/wireguard/clients/{wg}/qr").status_code == 403
+        r = visor.post(f"/api/ha/clients/{name}/bundle", json={"health_check_hosts": ["10.10.0.1"]})
+        assert r.status_code == 403
+        assert "clients:config" not in visor.get("/api/me").json()["permissions"]
+
+    def test_configurar_2fa_no_la_desactiva(self):
+        """Antes /2fa/setup ponía totp_enabled=False: con una sesión robada se quitaba sin código."""
+        from vpn_manager.totp import now_code
+        c = self._login("admin", "admin123")
+        secret = c.post("/api/me/2fa/setup").json()["secret"]
+        assert c.post("/api/me/2fa/enable", json={"code": now_code(secret)}).status_code == 200
+        assert c.post("/api/me/2fa/setup").status_code == 409
+        assert c.get("/api/me").json()["totp_enabled"] is True
+
+    def test_cambiar_la_contrasena_cierra_las_otras_sesiones(self):
+        robada = self._login("oper", "operario1")
+        admin = self._login("admin", "admin123")
+        assert admin.put("/api/users/oper", json={"password": "nueva-clave-1"}).status_code == 200
+        assert robada.get("/api/me").status_code == 401
+        assert self._login("oper", "nueva-clave-1").get("/api/me").status_code == 200
+        # quien cambia su propia contraseña sigue dentro en esa sesión; sus otras sesiones no
+        otra = self._login("admin", "admin123")
+        assert admin.put("/api/users/admin", json={"password": "otra-clave-2"}).status_code == 200
+        assert admin.get("/api/me").status_code == 200 and otra.get("/api/me").status_code == 401
 
     def test_auditoria_solo_admin(self):
         adm = self._login("admin", "admin123")
@@ -926,21 +961,21 @@ class TestWriteApi:
         _login(self.client)
 
     def test_alta_revoca_y_descarga_por_api(self):
-        r = self.client.post("/api/openvpn/clients", json={"name": "tablet-jose"})
+        r = self.client.post("/api/openvpn/clients", json={"name": "tablet-demo"})
         assert r.status_code == 201
         assert r.json()["status"] == "valid"
 
-        r = self.client.get("/api/openvpn/clients/tablet-jose/config")
+        r = self.client.get("/api/openvpn/clients/tablet-demo/config")
         assert r.status_code == 200
-        assert "tablet-jose" in r.text
+        assert "tablet-demo" in r.text
         assert "attachment" in r.headers["content-disposition"]
 
-        r = self.client.post("/api/openvpn/clients/tablet-jose/revoke")
+        r = self.client.post("/api/openvpn/clients/tablet-demo/revoke")
         assert r.status_code == 200
         assert r.json()["status"] == "revoked"
 
         # tras revocar, la descarga se bloquea
-        assert self.client.get("/api/openvpn/clients/tablet-jose/config").status_code == 403
+        assert self.client.get("/api/openvpn/clients/tablet-demo/config").status_code == 403
 
     def test_codigos_de_error(self):
         assert self.client.post("/api/openvpn/clients", json={"name": "alice-laptop"}).status_code == 409

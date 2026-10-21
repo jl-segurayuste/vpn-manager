@@ -9,7 +9,7 @@
 > de abajo (multiusuario+roles en `vpn_manager/users.py`, auditoría persistida en
 > `vpn_manager/audit.py`, entrega de config en `vpn_manager/delivery.py`, instalador
 > multi-distro en `vpn_manager/installer.py`). Solo queda la Fase 5 (despliegue) y
-> los logos oficiales (activo gráfico que solo tiene José, ver README de `professional/`).
+> los logos oficiales de OpenVPN y WireGuard (no se incluyen en el repo).
 
 ## 1. Objetivo
 
@@ -87,10 +87,10 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    multiusuario + roles (admin/operador/visor) con permisos exigidos en el backend;
    instalación de servicios (paquetes multi-distro, `installer.py`); navegación por
    páginas; historial/auditoría persistida.
-5. **[PENDIENTE] Despliegue interno** (cuando José lo diga): apuntar al servidor
+5. **[PENDIENTE] Despliegue interno**: apuntar al servidor
    real con privilegios acotados, detrás del proxy interno. Único paso de código
    que falta antes: sustituir los logos placeholder por los oficiales de OpenVPN/
-   WireGuard (`vpn_manager/ui/assets/README.md` — activo gráfico que solo tiene José).
+   WireGuard (`vpn_manager/ui/assets/README.md`; no se distribuyen con el repo).
 6. **[HECHO 2026-07-23] Paquete de alta disponibilidad**: `POST
    /api/ha/clients/{name}/bundle` (`vpn_manager/ha_bundle.py`) + botón "Alta
    disponibilidad" en la vista de OpenVPN del panel. Nace de un fallo real
@@ -104,8 +104,8 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    NetworkManager. 12 tests nuevos (`tests/test_ha_bundle.py`), CI verde.
 7. **[HECHO 2026-08-08] Desinstalación, en los dos niveles ya existentes de
    instalación** — el panel se declaraba equivalente a la CLI pero no tenía
-   forma de desinstalar nada; José lo pidió explícitamente al revisar el
-   proyecto antes de publicarlo. `installer.py` gana `uninstall_plan()`/
+   forma de desinstalar nada; se añadió al revisar el proyecto antes de
+   publicarlo. `installer.py` gana `uninstall_plan()`/
    `uninstall()` (mismo modelo de seguridad que instalar: sandbox simula,
    `VPNM_ALLOW_INSTALL=true` + root en real, `purge=true` opcional para
    también borrar configuración de paquetes en apt). `bootstrap.py` gana
@@ -126,8 +126,8 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    (`curl` a los 4 endpoints nuevos, sandbox), no solo con tests.
 
 8. **[HECHO 2026-08-09] Instalación llave en mano de WireGuard, realmente
-   desatendida** — José insistió en que el panel debía ser 100% equivalente a
-   la CLI, sin excepciones; cerraba el hallazgo dejado pendiente en el punto
+   desatendida** — el panel tiene que ser 100% equivalente a la CLI, sin
+   excepciones; cerraba el hallazgo dejado pendiente en el punto
    anterior. `AUTO_INSTALL=y` (lo que `unattended_env()` usaba antes para
    WireGuard) no existe en el commit realmente fijado (`832fb98…`) — ese
    camino probablemente nunca había completado un arranque desatendido de

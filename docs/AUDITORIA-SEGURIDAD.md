@@ -54,8 +54,8 @@ sin material criptográfico en el repo.
   para uso interno; si se escala, mover a almacenamiento compartido.
 - **Exposición**: pensado para **acceso interno** detrás del proxy con HTTPS
   (`VPNM_COOKIE_SECURE=true`). No exponer a internet.
-- **Antes del martes (publicación):** fijar `VPNM_ADMIN_PASSWORD_HASH` real,
-  `VPNM_SECRET_KEY` y, al desplegar, `VPNM_COOKIE_SECURE=true`.
+- **Al desplegar:** fijar `VPNM_ADMIN_PASSWORD_HASH` real, `VPNM_SECRET_KEY` y
+  `VPNM_COOKIE_SECURE=true`.
 
 ## Anexo (superficie añadida tras la auditoría inicial)
 
@@ -80,5 +80,16 @@ sin material criptográfico en el repo.
 - **Assets estáticos** (`/assets`): solo logos; servidos por StaticFiles (sin traversal).
 - **Entrega de config**: «guardar en servidor» restringido a `export_dir` (anti-traversal);
   «correo» valida la dirección y avisa de que no es canal seguro.
-- Pendiente: rotación/expiración de sesiones por usuario; 2FA (opcional); auditoría
-  persistida (hoy va al log).
+- 2FA (TOTP con anti-repetición) y auditoría persistida en fichero ya están hechos; la
+  revocación de sesiones, en la revisión de 2026-10-21 (abajo).
+
+## Revisión de 2026-10-21
+
+| # | Severidad | Hallazgo | Corrección |
+|---|---|---|---|
+| 1 | **Alta** | **El rol «Solo lectura» descargaba las configuraciones de los clientes** (OpenVPN, WireGuard, QR y paquete de alta disponibilidad), que llevan su clave privada: con ellas se entra en la red. Los endpoints solo pedían sesión. | Permiso nuevo `clients:config` (admin y operador); la UI oculta Descargar, QR y Alta disponibilidad a quien no lo tiene. Test `test_solo_lectura_no_descarga_configuraciones`. |
+| 2 | **Media** | **Configurar el 2FA lo desactivaba sin código**: `POST /api/me/2fa/setup` ponía `totp_enabled=False`, así que con una sesión robada se quitaba la verificación (desactivarla sí pide código). | Con el 2FA activo, configurarlo de nuevo devuelve 409: hay que desactivarlo antes con un código. Test `test_configurar_2fa_no_la_desactiva`. |
+| 3 | **Media** | **Sesiones sin revocación**: la sesión es una cookie firmada sin estado; tras cambiar la contraseña, una copia robada seguía valiendo hasta caducar. | Versión de sesión por usuario: cambiar la contraseña o el 2FA invalida las demás sesiones (la de quien hace el cambio sigue). Test `test_cambiar_la_contrasena_cierra_las_otras_sesiones`. |
+| 4 | Baja | La función de escapado de la UI no escapaba comillas y los nombres de cliente van dentro de `onclick="…('nombre')"`: un CN con comillas creado fuera del panel podía inyectar JavaScript. | `esc()` escapa también `"` y `'`. |
+
+Los tres tests fallan con el código anterior y pasan con el corregido.

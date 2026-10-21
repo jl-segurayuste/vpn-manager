@@ -95,7 +95,7 @@ def _http(exc: VpnError) -> HTTPException:
 def require_user(request: Request) -> str:
     """Dependencia: exige sesión iniciada y que el usuario siga existiendo."""
     user = request.session.get("user")
-    if not user or not _users.exists(user):
+    if not user or not _users.exists(user) or request.session.get("epoch") != _users.session_epoch(user):
         raise HTTPException(status_code=401, detail="No autenticado")
     return user
 
@@ -169,7 +169,7 @@ def _deliver_email(backend, name: str, ext: str, email: str, user: str) -> dict:
     return result
 
 
-app = FastAPI(title="VPN Manager", version="0.3.0")
+app = FastAPI(title="VPN Manager", version="0.3.1")
 
 
 class _Metrics:
@@ -249,14 +249,16 @@ _PROTECTED = [Depends(require_user)]
 # ── Páginas ──────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def ui(request: Request):
-    if not request.session.get("user"):
+    try:
+        require_user(request)
+    except HTTPException:
         return RedirectResponse("/login", status_code=303)
     return HTMLResponse((_UI / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, error: str = ""):
-    if request.session.get("user"):
+    if request.session.get("user") and request.session.get("epoch") == _users.session_epoch(request.session["user"]):
         return RedirectResponse("/", status_code=303)
     step = "code" if request.session.get("pending_2fa") else "login"
     return HTMLResponse(_render_login(error, step))
@@ -283,6 +285,7 @@ def login(
             _throttle.reset(ip)
             request.session.clear()
             request.session["user"] = pending
+            request.session["epoch"] = _users.session_epoch(pending)
             log.info("login correcto (%s) [2FA] desde %s", pending, ip)
             return RedirectResponse("/", status_code=303)
         _throttle.record_failure(ip)
@@ -304,6 +307,7 @@ def login(
     _throttle.reset(ip)
     request.session.clear()
     request.session["user"] = username
+    request.session["epoch"] = _users.session_epoch(username)
     log.info("login correcto (%s) desde %s", username, ip)
     return RedirectResponse("/", status_code=303)
 
@@ -345,31 +349,36 @@ class TwoFACode(BaseModel):
 @app.post("/api/me/2fa/setup")
 def me_2fa_setup(user: str = Depends(require_user)) -> dict:
     secret = totp.generate_secret()
-    _users.set_totp_secret(user, secret)  # pendiente de confirmar
+    try:
+        _users.set_totp_secret(user, secret)  # pendiente de confirmar
+    except users.UserError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     uri = totp.provisioning_uri(secret, user)
     import segno
     return {"secret": secret, "uri": uri, "qr": segno.make(uri, error="m").svg_inline(scale=4)}
 
 
 @app.post("/api/me/2fa/enable")
-def me_2fa_enable(body: TwoFACode, user: str = Depends(require_user)) -> dict:
+def me_2fa_enable(body: TwoFACode, request: Request, user: str = Depends(require_user)) -> dict:
     if not _users.verify_totp(user, body.code):
         raise HTTPException(status_code=422, detail="Código incorrecto. Vuelve a intentarlo.")
     try:
         _users.enable_totp(user)
     except users.UserError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    request.session["epoch"] = _users.session_epoch(user)   # esta sesión sigue; las demás se cierran
     log.info("2FA activado por %s", user)
     return {"totp_enabled": True}
 
 
 @app.post("/api/me/2fa/disable")
-def me_2fa_disable(body: TwoFACode, user: str = Depends(require_user)) -> dict:
+def me_2fa_disable(body: TwoFACode, request: Request, user: str = Depends(require_user)) -> dict:
     if not _users.totp_enabled(user):
         raise HTTPException(status_code=422, detail="La verificación en dos pasos no está activa.")
     if not _users.verify_totp(user, body.code):
         raise HTTPException(status_code=422, detail="Código incorrecto.")
     _users.disable_totp(user)
+    request.session["epoch"] = _users.session_epoch(user)
     log.info("2FA desactivado por %s", user)
     return {"totp_enabled": False}
 
@@ -410,11 +419,14 @@ def users_create(body: CreateUser, admin: str = Depends(require_perm("users:mana
 
 
 @app.put("/api/users/{username}")
-def users_update(username: str, body: UpdateUser, admin: str = Depends(require_perm("users:manage"))) -> dict:
+def users_update(username: str, body: UpdateUser, request: Request,
+                 admin: str = Depends(require_perm("users:manage"))) -> dict:
     try:
         _users.update(username, role=body.role, password=body.password)
     except users.UserError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    if username == admin:      # quien cambia su propia contraseña sigue dentro en esta sesión
+        request.session["epoch"] = _users.session_epoch(admin)
     log.info("usuario «%s» modificado por %s", username, admin)
     return {"updated": username}
 
@@ -654,7 +666,7 @@ def wg_revoke(name: str, user: str = Depends(require_perm("clients:write"))) -> 
     response_class=PlainTextResponse,
     dependencies=_PROTECTED,
 )
-def wg_config(name: str, user: str = Depends(require_user)) -> Response:
+def wg_config(name: str, user: str = Depends(require_perm("clients:config"))) -> Response:
     try:
         text = _wireguard().client_config(name)
     except VpnError as e:
@@ -665,7 +677,7 @@ def wg_config(name: str, user: str = Depends(require_user)) -> Response:
     )
 
 
-@app.get("/api/wireguard/clients/{name}/qr", dependencies=_PROTECTED)
+@app.get("/api/wireguard/clients/{name}/qr", dependencies=[Depends(require_perm("clients:config"))])
 def wg_qr(name: str) -> Response:
     try:
         svg = _wireguard().client_qr_svg(name)
@@ -750,7 +762,7 @@ def openvpn_disconnect(name: str, user: str = Depends(require_perm("clients:writ
     response_class=PlainTextResponse,
     dependencies=_PROTECTED,
 )
-def openvpn_config(name: str, user: str = Depends(require_user)) -> Response:
+def openvpn_config(name: str, user: str = Depends(require_perm("clients:config"))) -> Response:
     try:
         text = _openvpn().client_config(name)
     except VpnError as e:
@@ -777,7 +789,7 @@ def openvpn_email(name: str, body: SendEmail, user: str = Depends(require_perm("
 # nombre) -- este endpoint solo empaqueta, no crea nada.
 @app.post("/api/ha/clients/{name}/bundle", dependencies=_PROTECTED)
 def ha_bundle_download(
-    name: str, body: HaBundleRequest, user: str = Depends(require_user)
+    name: str, body: HaBundleRequest, user: str = Depends(require_perm("clients:config"))
 ) -> Response:
     try:
         openvpn_conf = _openvpn().client_config(name)

@@ -17,12 +17,14 @@ from . import auth, totp
 # ── Roles y permisos ───────────────────────────────────────────────────────
 PERMISSIONS: dict[str, set[str]] = {
     "admin": {
-        "clients:read", "clients:write", "service:control", "server:read", "server:write",
-        "logs:read", "users:manage", "system:install", "audit:read",
+        "clients:read", "clients:write", "clients:config", "service:control", "server:read",
+        "server:write", "logs:read", "users:manage", "system:install", "audit:read",
     },
     "operator": {
-        "clients:read", "clients:write", "service:control", "server:read", "logs:read",
+        "clients:read", "clients:write", "clients:config", "service:control", "server:read", "logs:read",
     },
+    # Solo lectura: ve clientes y conexiones, pero no descarga sus configuraciones (llevan la clave
+    # privada del cliente: con ellas se entra en la red)
     "viewer": {"clients:read", "server:read", "logs:read"},
 }
 ROLES = list(PERMISSIONS)
@@ -96,9 +98,14 @@ class UserStore:
         return u.get("totp_secret") if u else None
 
     def set_totp_secret(self, username: str, secret: str) -> None:
-        """Guarda un secreto pendiente de confirmar (aún no activo)."""
+        """Guarda un secreto pendiente de confirmar (aún no activo).
+
+        Con la verificación ya activa no se puede: antes esto la desactivaba, así que con una sesión
+        robada se quitaba el 2FA sin dar ningún código (desactivarlo sí lo pide)."""
         if username not in self.users:
             raise UserError(f"No existe el usuario «{username}».")
+        if self.users[username].get("totp_enabled"):
+            raise UserError("La verificación en dos pasos ya está activa: desactívala primero con un código.")
         self.users[username]["totp_secret"] = secret
         self.users[username]["totp_enabled"] = False
         self._save()
@@ -107,13 +114,26 @@ class UserStore:
         if not self.users.get(username, {}).get("totp_secret"):
             raise UserError("Primero genera el código QR (configurar).")
         self.users[username]["totp_enabled"] = True
+        self._bump_epoch(username)
         self._save()
 
     def disable_totp(self, username: str) -> None:
         if username in self.users:
             self.users[username].pop("totp_secret", None)
             self.users[username]["totp_enabled"] = False
+            self._bump_epoch(username)
             self._save()
+
+    # ── Versión de sesión ─────────────────────────────────────────────────
+    # La sesión es una cookie firmada sin estado en el servidor: sin esto, una copia robada seguía
+    # valiendo tras cambiar la contraseña hasta caducar. La sesión guarda la versión del usuario al
+    # entrar y deja de valer cuando cambia (contraseña o 2FA).
+    def session_epoch(self, username: str) -> int:
+        u = self.users.get(username)
+        return int(u.get("session_epoch", 0)) if u else -1
+
+    def _bump_epoch(self, username: str) -> None:
+        self.users[username]["session_epoch"] = self.session_epoch(username) + 1
 
     def verify_totp(self, username: str, code: str, window: int = 1, at: float | None = None) -> bool:
         """Valida un código TOTP e impide reutilizarlo. Bug real encontrado
@@ -173,6 +193,7 @@ class UserStore:
             self.users[username]["role"] = role
         if password is not None:
             self.users[username]["password_hash"] = auth.hash_password(password)
+            self._bump_epoch(username)          # cierra las sesiones abiertas de ese usuario
         self._save()
 
     def delete(self, username: str) -> None:

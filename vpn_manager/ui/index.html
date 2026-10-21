@@ -308,7 +308,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const esc = s => (s??'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// También comillas: los nombres van dentro de onclick="…('${n}')" y de atributos
+const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtBytes = b => { if(!b) return '0 B'; const u=['B','KB','MB','GB','TB']; let i=0; while(b>=1024&&i<u.length-1){b/=1024;i++;} return b.toFixed(i?1:0)+' '+u[i]; };
 const fmtDate = s => s ? new Date(s).toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'}) : '—';
 const since = s => { if(!s) return '—'; const m=Math.max(0,Math.round((Date.now()-new Date(s))/60000)); if(m<60) return 'hace '+m+' min'; const h=Math.floor(m/60); if(h<24) return 'hace '+h+' h '+(m%60)+' min'; return 'hace '+Math.floor(h/24)+' días'; };
@@ -799,16 +800,17 @@ function renderClients(cl){
     const w = can('clients:write');
     let actions='';
     if(c.status==='valid'){
-      const qr = BACKEND==='wireguard' ? `<a class="act" href="${api('/clients/'+enc+'/qr')}" target="_blank">Código QR</a>` : '';
+      const cfg = can('clients:config');   // la configuración lleva la clave privada del cliente
+      const qr = (BACKEND==='wireguard' && cfg) ? `<a class="act" href="${api('/clients/'+enc+'/qr')}" target="_blank">Código QR</a>` : '';
       // El paquete de alta disponibilidad combina OpenVPN (primario) + el
       // dispositivo homónimo en WireGuard (respaldo) -- solo tiene sentido
       // ofrecerlo desde la vista de OpenVPN.
-      const ha = (BACKEND==='openvpn' && w) ? `<button class="act" onclick="haBundle('${n}')">Alta disponibilidad</button>` : '';
+      const ha = (BACKEND==='openvpn' && w && cfg) ? `<button class="act" onclick="haBundle('${n}')">Alta disponibilidad</button>` : '';
       const wr = w ? `<button class="act" onclick="saveConfig('${n}')">Guardar en servidor</button>
         <button class="act" onclick="emailConfig('${n}')">Enviar por correo</button>
         <button class="act danger" onclick="revokeClient('${n}')">Retirar acceso</button>` : '';
       actions=`<div class="actions">
-        <a class="act" href="${api('/clients/'+enc+'/config')}" download>Descargar</a>${qr}${ha}${wr}</div>`;
+        ${cfg ? `<a class="act" href="${api('/clients/'+enc+'/config')}" download>Descargar</a>` : ''}${qr}${ha}${wr}</div>`;
     } else if(c.status==='expired' && w){
       actions=`<div class="actions"><button class="act" onclick="renewClient('${n}')">Renovar acceso</button></div>`;
     }
