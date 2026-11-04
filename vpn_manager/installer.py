@@ -33,7 +33,7 @@ _INSTALL_CMD = {
 # Gestor de paquetes -> cómo desinstalar. apt distingue remove/purge (purge también
 # quita ficheros de configuración de los paquetes, ej. /etc/openvpn); el resto de
 # gestores no tienen esa distinción de forma nativa (pacman -Rns ya limpia
-# dependencias huérfanas + config; dnf/zypper remove ya se comporta como un purge).
+# dependencias huérfanas; dnf/zypper remove conservan como .rpmsave la configuración modificada).
 _UNINSTALL_CMD = {
     "apt": ["apt-get", "remove", "-y"],
     "dnf": ["dnf", "remove", "-y"],
@@ -149,6 +149,12 @@ def install_plan(backend: str, manager: str | None = None) -> dict:
             "packages": packages, "commands": commands}
 
 
+def _noninteractive_env() -> dict[str, str]:
+    """Sin terminal: si un paquete pregunta algo (debconf), que use la respuesta por defecto en vez
+    de dejar la petición colgada hasta el timeout."""
+    return {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+
+
 def install(backend: str, sandbox: bool, allow_install: bool, timeout: int = 600) -> dict:
     plan = install_plan(backend)
     if not plan["supported"]:
@@ -168,7 +174,8 @@ def install(backend: str, sandbox: bool, allow_install: bool, timeout: int = 600
     output = []
     for cmd in plan["commands"]:  # pragma: no cover - requiere root + paquetes reales
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True,
+                               stdin=subprocess.DEVNULL, env=_noninteractive_env())
             output.append(r.stdout[-2000:])
         except subprocess.CalledProcessError as e:
             raise InstallError(f"«{' '.join(cmd)}» falló: {e.stderr.strip() or e}") from e
@@ -217,7 +224,8 @@ def uninstall(
     output = []
     for cmd in plan["commands"]:  # pragma: no cover - requiere root + paquetes reales
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True,
+                               stdin=subprocess.DEVNULL, env=_noninteractive_env())
             output.append(r.stdout[-2000:])
         except subprocess.CalledProcessError as e:
             raise InstallError(f"«{' '.join(cmd)}» falló: {e.stderr.strip() or e}") from e

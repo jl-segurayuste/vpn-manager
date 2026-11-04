@@ -50,6 +50,23 @@ def checks(settings) -> list[dict]:
         add("warn", "Instalación de servicios habilitada (VPNM_ALLOW_INSTALL=true): el panel "
                     "puede instalar paquetes como root. Déjalo en false salvo cuando lo uses.")
 
+    if getattr(settings, "allow_command_directives", False):
+        add("warn", "VPNM_ALLOW_COMMAND_DIRECTIVES=true: desde el panel se pueden añadir directivas que "
+                    "ejecutan órdenes como root (up, plugin, PostUp…). Déjalo en false salvo cuando lo uses.")
+
+    # OpenVPN real: lo que hace falta para que retirar y desconectar funcionen.
+    conf = getattr(settings, "openvpn_server_conf", None)
+    if not settings.sandbox and conf is not None and conf.exists():
+        keys = {ln.strip().split(" ", 1)[0] for ln in conf.read_text(errors="replace").splitlines()
+                if ln.strip() and ln.strip()[0] not in "#;"}
+        if "crl-verify" not in keys:
+            add("warn", "El server.conf de OpenVPN no tiene «crl-verify»: retirar un acceso no impide que "
+                        "siga conectando.")
+        if "management" not in keys:
+            add("info", "OpenVPN sin interfaz de management: «Desconectar» no funciona y, al retirar un "
+                        "acceso, su sesión abierta dura hasta la siguiente renegociación. Añade "
+                        "«management /run/openvpn-server/management.sock unix».")
+
     return out
 
 

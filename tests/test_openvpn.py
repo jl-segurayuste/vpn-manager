@@ -825,6 +825,7 @@ class TestBootstrap:
         import subprocess as sp
 
         from vpn_manager import bootstrap
+        monkeypatch.setattr(bootstrap, "_installed_marker", lambda *_: tmp_path)
 
         url, sha = self._served(tmp_path)
         s = self._settings(tmp_path, wg_url=url, wg_sha=sha, allow=True)
@@ -1125,3 +1126,14 @@ class TestSecurityHeaders:
         monkeypatch.setattr(settings, "cookie_secure", True)
         r = TestClient(app).get("/health")
         assert "max-age=" in r.headers.get("strict-transport-security", "")
+
+
+def test_bootstrap_openvpn_usa_el_subcomando_install(tmp_path):
+    """Sin `install`, el script fijado solo muestra la ayuda y sale con 0."""
+    from types import SimpleNamespace
+
+    from vpn_manager import bootstrap
+
+    s = SimpleNamespace(openvpn_public_endpoint="vpn.ejemplo.com", wireguard_interface="wg0")
+    assert bootstrap.install_args("openvpn", s) == ["install", "--endpoint", "vpn.ejemplo.com", "--client", "cliente1"]
+    assert "DNS" not in bootstrap.unattended_env("openvpn", s)

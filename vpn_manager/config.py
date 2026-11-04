@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Permitir que el panel INSTALE los servicios VPN (apt/dnf/…). Doble seguro: además
     # del rol admin, en producción hay que activarlo aquí y ejecutarse como root.
     allow_install: bool = False
+    # Permitir añadir/cambiar desde el panel directivas que ejecutan órdenes como root (up, plugin,
+    # PostUp…). Las que ya existen se conservan siempre.
+    allow_command_directives: bool = False
 
     # ── Instalación «llave en mano» (scripts de angristan, pineados + verificados) ──
     # Defaults FIJADOS a un commit concreto de angristan con su SHA-256 (opción A:

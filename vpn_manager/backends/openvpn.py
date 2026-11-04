@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ..fsutil import write_private
 from .base import (
+    OPENVPN_COMMAND_DIRECTIVES,
     AlreadyExists,
     ConfigDirective,
     Forbidden,
@@ -29,6 +30,7 @@ from .base import (
     VpnClient,
     VpnConnection,
     VpnError,
+    check_command_directives,
 )
 
 _CN_RE = re.compile(r"/CN=([^/]+)")
@@ -71,7 +73,9 @@ class OpenVpnBackend(VpnBackend):
         log_file: Path | None = None,
         server_conf: Path | None = None,
         public_endpoint: str = "vpn.ejemplo.local",
+        allow_command_directives: bool = False,
     ) -> None:
+        self.allow_command_directives = allow_command_directives
         self.pki_index = pki_index
         self.status_file = status_file
         self.service = service
@@ -472,6 +476,19 @@ class OpenVpnBackend(VpnBackend):
 
         if not self.server_conf:
             raise VpnError("No hay fichero de configuración del servidor definido.")
+        current: set[tuple[str, str]] = set()
+        if self.server_conf.exists():
+            for raw in self.server_conf.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if line and line[0] not in "#;":
+                    key, _, value = line.partition(" ")
+                    current.add((key.lower(), value.strip()))
+        err = check_command_directives(
+            [((k or "").strip(), v or "") for k, v in directives], current,
+            OPENVPN_COMMAND_DIRECTIVES, self.allow_command_directives,
+        )
+        if err:
+            raise Forbidden(err)
         cleaned: list[str] = []
         for key, value in directives:
             key = (key or "").strip()
@@ -484,7 +501,7 @@ class OpenVpnBackend(VpnBackend):
             cleaned.append(f"{key} {value}".rstrip())
         header = "# Configuración del servidor OpenVPN — gestionada por VPN Manager"
         self.server_conf.parent.mkdir(parents=True, exist_ok=True)
-        self.server_conf.write_text(header + "\n" + "\n".join(cleaned) + "\n", encoding="utf-8")
+        write_private(self.server_conf, header + "\n" + "\n".join(cleaned) + "\n")   # atómico
         return self.server_info()
 
     # ── Registros ──────────────────────────────────────────────────────────

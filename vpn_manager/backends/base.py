@@ -66,6 +66,33 @@ class VpnError(Exception):
     """Error de negocio del backend."""
 
 
+# Directivas que hacen que el servicio (root) ejecute órdenes o cargue código. Las que ya están en la
+# configuración se conservan al editarla; añadirlas o cambiarlas desde el panel exige
+# VPNM_ALLOW_COMMAND_DIRECTIVES=true: si no, una sesión de administrador robada bastaba para ejecutar
+# órdenes como root en el servidor.
+OPENVPN_COMMAND_DIRECTIVES = frozenset({
+    "up", "down", "client-connect", "client-disconnect", "learn-address", "auth-user-pass-verify",
+    "tls-verify", "ipchange", "route-up", "route-pre-down", "plugin", "script-security", "config",
+})
+WIREGUARD_COMMAND_DIRECTIVES = frozenset({"preup", "postup", "predown", "postdown"})
+
+
+def check_command_directives(
+    submitted: list[tuple[str, str]], current: set[tuple[str, str]], command_keys: frozenset[str], allowed: bool
+) -> str | None:
+    """Mensaje de error si se añade o cambia una directiva que ejecuta órdenes sin permitirlo."""
+    if allowed:
+        return None
+    for key, value in submitted:
+        if key.lower() in command_keys and (key.lower(), value.strip()) not in current:
+            return (
+                f"«{key}» ejecuta órdenes como root en el servidor: por seguridad no se puede añadir ni "
+                "cambiar desde el panel (las que ya existen se conservan). Si lo necesitas, edítalo en el "
+                "servidor o arranca el panel con VPNM_ALLOW_COMMAND_DIRECTIVES=true."
+            )
+    return None
+
+
 class InvalidName(VpnError):
     """Nombre de cliente no válido (caracteres no permitidos)."""
 

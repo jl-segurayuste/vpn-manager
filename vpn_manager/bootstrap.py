@@ -164,13 +164,9 @@ def unattended_env(backend: str, settings) -> dict[str, str]:
     omite del dict si no se pudo detectar (host sin ruta por defecto); `run()`
     comprueba esto explícitamente antes de invocar el script de verdad."""
     if backend == "openvpn":
-        return {
-            "AUTO_INSTALL": "y", "APPROVE_INSTALL": "y", "APPROVE_IP": "y",
-            "IPV6_SUPPORT": "n", "PORT_CHOICE": "1", "PROTOCOL_CHOICE": "1",
-            "DNS": "1", "COMPRESSION_ENABLED": "n", "CUSTOMIZE_ENC": "n",
-            "CLIENT": "cliente1", "PASS": "1",
-            "ENDPOINT": settings.openvpn_public_endpoint,
-        }
+        # El script fijado usa subcomandos y opciones (ver install_args); las variables del script
+        # antiguo (AUTO_INSTALL, DNS=1…) ya no sirven y DNS=1 lo hacía fallar.
+        return {}
     env = {
         "SERVER_WG_NIC": settings.wireguard_interface,
         "SERVER_WG_IPV4": _WIREGUARD_DEFAULT_WG_IPV4,
@@ -202,6 +198,20 @@ def _wireguard_install_stdin(settings) -> str:
     return "\n".join(lines) + "\n"
 
 
+def install_args(backend: str, settings) -> list[str]:
+    """Argumentos del script. El de OpenVPN fijado necesita el subcomando `install`: sin él solo
+    muestra la ayuda y sale con 0, y el panel daba por instalado algo que no había hecho nada."""
+    if backend == "openvpn":
+        return ["install", "--endpoint", settings.openvpn_public_endpoint, "--client", "cliente1"]
+    return []
+
+
+def _installed_marker(backend: str, settings) -> Path:
+    if backend == "openvpn":
+        return Path("/etc/openvpn/server/server.conf")
+    return Path(f"/etc/wireguard/{settings.wireguard_interface}.conf")
+
+
 def _install_stdin(backend: str, settings) -> str | None:
     if backend == "wireguard":
         return _wireguard_install_stdin(settings)
@@ -216,6 +226,7 @@ def plan(backend: str, settings) -> dict:
         "url": url,
         "checksum_configured": bool(url and sha),
         "env": unattended_env(backend, settings),
+        "command": ["bash", f"{backend}-install.sh", *install_args(backend, settings)],
     }
 
 
@@ -253,13 +264,19 @@ def run(backend: str, settings, sandbox: bool) -> dict:
     env = {**os.environ, **backend_env}
     try:  # pragma: no cover - requiere root
         r = subprocess.run(
-            ["bash", str(dest)], env=env, input=_install_stdin(backend, settings),
+            ["bash", str(dest), *install_args(backend, settings)], env=env,
+            input=_install_stdin(backend, settings) or "",
             capture_output=True, text=True, timeout=900, check=True,
         )
     except subprocess.CalledProcessError as e:  # pragma: no cover
         raise BootstrapError(f"El instalador falló: {e.stderr.strip() or e}") from e
     except (OSError, subprocess.TimeoutExpired) as e:  # pragma: no cover
         raise BootstrapError(f"No se pudo ejecutar el instalador: {e}") from e
+    if not _installed_marker(backend, settings).exists():  # pragma: no cover - requiere root
+        raise BootstrapError(
+            f"El instalador terminó sin crear {_installed_marker(backend, settings)}: no se instaló nada. "
+            f"Salida: {r.stdout[-500:]}"
+        )
     return {"installed": True, "simulated": False, "plan": p, "output": r.stdout[-3000:]}
 
 

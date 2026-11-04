@@ -69,6 +69,7 @@ def _openvpn() -> OpenVpnBackend:
         log_file=settings.openvpn_log_file,
         server_conf=settings.openvpn_server_conf,
         public_endpoint=settings.openvpn_public_endpoint,
+        allow_command_directives=settings.allow_command_directives,
     )
 
 
@@ -82,6 +83,7 @@ def _wireguard() -> WireGuardBackend:
         log_file=settings.wireguard_log_file,
         public_endpoint=settings.wireguard_public_endpoint,
         dns=settings.wireguard_dns,
+        allow_command_directives=settings.allow_command_directives,
     )
 
 
@@ -169,7 +171,7 @@ def _deliver_email(backend, name: str, ext: str, email: str, user: str) -> dict:
     return result
 
 
-app = FastAPI(title="VPN Manager", version="0.3.3")
+app = FastAPI(title="VPN Manager", version="0.3.4")
 
 
 @app.exception_handler(OSError)

@@ -59,6 +59,7 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
 | `VPNM_ADMIN_PASSWORD_HASH` | *(vacío)* | Hash PBKDF2. **Obligatorio en producción.** Genera con `python -m vpn_manager.hashpw`. |
 | `VPNM_SECRET_KEY` | *(vacío)* | Clave de firma de sesión. **Obligatoria en producción** (`python -c "import secrets;print(secrets.token_hex(32))"`). |
 | `VPNM_COOKIE_SECURE` | `false` | `true` detrás de HTTPS. |
+| `VPNM_ALLOW_COMMAND_DIRECTIVES` | `false` | Permite **añadir o cambiar** desde el panel directivas que ejecutan órdenes como root (`up`, `script-security`, `plugin`, `client-connect`… en OpenVPN; `PreUp`/`PostUp`/`PreDown`/`PostDown` en WireGuard). Las que ya existen se conservan siempre al editar. |
 
 ### OpenVPN
 

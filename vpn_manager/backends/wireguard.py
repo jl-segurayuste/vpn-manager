@@ -21,8 +21,10 @@ from pathlib import Path
 
 from ..fsutil import write_private
 from .base import (
+    WIREGUARD_COMMAND_DIRECTIVES,
     AlreadyExists,
     ConfigDirective,
+    Forbidden,
     InvalidName,
     NotFound,
     ServerInfo,
@@ -31,6 +33,7 @@ from .base import (
     VpnClient,
     VpnConnection,
     VpnError,
+    check_command_directives,
 )
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -77,7 +80,9 @@ class WireGuardBackend(VpnBackend):
         log_file: Path | None = None,
         public_endpoint: str = "vpn.ejemplo.local",
         dns: str = "1.1.1.1",
+        allow_command_directives: bool = False,
     ) -> None:
+        self.allow_command_directives = allow_command_directives
         self.conf = conf
         self.show_file = show_file
         self.service = service
@@ -348,7 +353,15 @@ class WireGuardBackend(VpnBackend):
         """Reescribe el [Interface] del wg0.conf preservando la clave privada y los peers."""
         from .wireguard_schema import validate_directive
 
-        priv = self._parse_interface().get("PrivateKey", "")
+        current_iface = self._parse_interface()
+        priv = current_iface.get("PrivateKey", "")
+        err = check_command_directives(
+            [((k or "").strip(), v or "") for k, v in directives],
+            {(k.lower(), v) for k, v in current_iface.items()},
+            WIREGUARD_COMMAND_DIRECTIVES, self.allow_command_directives,
+        )
+        if err:
+            raise Forbidden(err)
         out: list[str] = []
         for key, value in directives:
             key = (key or "").strip()
