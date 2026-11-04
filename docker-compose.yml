@@ -17,13 +17,16 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    # Datos persistentes (usuarios, auditoría) fuera del contenedor de solo lectura.
+    # Todo lo que el panel escribe (PKI y clientes de demo, usuarios, auditoría, exports) va en un
+    # volumen: el resto del contenedor es de solo lectura. Antes solo se montaba sandbox/data y dar de
+    # alta un cliente o guardar su configuración daba error 500. Un volumen con nombre vacío se rellena
+    # con el sandbox de la imagen la primera vez.
     volumes:
-      - vpnm-data:/app/sandbox/data
+      - vpnm-sandbox:/app/sandbox
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
 
 volumes:
-  vpnm-data:
+  vpnm-sandbox:

@@ -40,7 +40,7 @@ python -m vpn_manager
 ### Pruebas y calidad
 
 ```bash
-pytest -q          # 65 pruebas
+pytest -q          # unas 180 pruebas
 ruff check .       # estilo
 ```
 
@@ -64,11 +64,16 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
 
 | Variable | Por defecto (sandbox) |
 |----------|------------------------|
-| `VPNM_OPENVPN_PKI_INDEX` | `sandbox/openvpn/pki/index.txt` → real: `/etc/openvpn/server/pki/index.txt` |
+| `VPNM_OPENVPN_PKI_INDEX` | `sandbox/openvpn/pki/index.txt` → real (instalador de angristan): `/etc/openvpn/server/easy-rsa/pki/index.txt` |
 | `VPNM_OPENVPN_STATUS_FILE` | `sandbox/openvpn/openvpn-status.log` → real: el `status` del servidor |
 | `VPNM_OPENVPN_LOG_FILE` | `sandbox/openvpn/openvpn.log` |
 | `VPNM_OPENVPN_SERVER_CONF` | `sandbox/openvpn/server.conf` → real: `/etc/openvpn/server/server.conf` |
 | `VPNM_OPENVPN_SERVICE` | `openvpn-server@server` |
+
+> El panel ejecuta `./easyrsa` en el directorio **padre de la PKI** (el de `index.txt` sube dos niveles:
+> `/etc/openvpn/server/easy-rsa/`). Si apuntas a una PKI sin `easyrsa` al lado, el alta, la retirada y la
+> renovación fallan. Las rutas relativas del `server.conf` (`crl-verify crl.pem`, `tls-crypt-v2 …`) se
+> resuelven desde el directorio del `server.conf`, como hace `openvpn-server@`.
 | `VPNM_OPENVPN_PUBLIC_ENDPOINT` | `vpn.ejemplo.local` (IP/dominio público que va en el `.ovpn`) |
 
 ### WireGuard
@@ -166,7 +171,7 @@ Imagen multi-stage que corre como **usuario sin privilegios** (uid 10001), con
 ```bash
 docker build -t vpn-manager .
 docker run -p 8200:8200 vpn-manager        # demo (sandbox), admin/admin
-# o con compose (volumen para usuarios/auditoría, read-only, cap_drop ALL):
+# o con compose (sandbox en un volumen, resto read-only, cap_drop ALL):
 docker compose up -d
 ```
 
@@ -212,9 +217,21 @@ en ese caso.
    sudo systemctl daemon-reload && sudo systemctl enable --now vpn-manager
    ```
 4. **Proxy inverso + HTTPS** (Caddy/Nginx) delante, en la red interna.
-5. **Permisos:** para arrancar/parar el servicio y editar la config, la cuenta del
-   servicio necesita acceso (vía `sudoers` acotado o capacidades concretas). Concede
-   lo mínimo imprescindible.
+5. **Permisos:** la unidad de ejemplo corre como **root**, que es lo que necesita hoy el panel: llama
+   directamente (sin `sudo`) a `systemctl`, `wg`, `openvpn` y `easyrsa`, y escribe en
+   `/etc/openvpn/server` y `/etc/wireguard`. Una regla de `sudoers` no sirve de nada porque no se usa
+   `sudo`. Por eso es importante que el panel solo sea accesible desde la red interna y con 2FA.
+6. **Desconectar sesiones y retirada inmediata (OpenVPN):** añade al `server.conf`
+   ```
+   management /run/openvpn-server/management.sock unix
+   ```
+   y reinicia el servicio. Con eso funcionan «Desconectar» y, al retirar un acceso, se corta también su
+   sesión abierta. Sin la interfaz de management, la CRL solo impide las conexiones nuevas: la sesión que
+   ya estuviera abierta sigue hasta la siguiente renegociación (`reneg-sec`, 1 hora por defecto).
+7. **WireGuard creado con el instalador:** el primer dispositivo (`cliente1`) lo crea el script, no el
+   panel, así que su clave privada no está en el panel: su configuración es la que el script deja en el
+   home de root. Los que crees desde el panel sí se pueden descargar y llevan el formato del script
+   (`### Client nombre`), que también los ve.
 
 ---
 

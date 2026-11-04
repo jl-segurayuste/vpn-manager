@@ -44,15 +44,15 @@ Hacer por web todo lo que hoy se hace por CLI en el propio servidor VPN:
   (`/etc/openvpn`, `/etc/wireguard`, comandos). En **desarrollo apunta a un
   sandbox** (`./sandbox/...`), **NUNCA a un servidor VPN de producción real**.
   Apuntar al servidor real es una decisión explícita de prod.
-- **Privilegios mínimos**: las operaciones que requieren root (recargar servicio,
-  escribir en `/etc/...`) se acotan; idealmente vía sudoers específicos o una capa
-  de ejecución controlada. Nunca `shell=True` con entrada del usuario.
+- **Privilegios mínimos**: objetivo pendiente. Hoy el panel corre como root en producción (llama a
+  `systemctl`, `wg`, `openvpn` y `easyrsa` sin `sudo`); el riesgo se acota con acceso solo interno, roles
+  y 2FA. Nunca `shell=True` con entrada del usuario.
 
 ## 3. Seguridad (es gestión de acceso remoto → crítico)
 
 - **[HECHO]** Autenticación: login con contraseña PBKDF2-SHA256 (600k it., comparación
   en tiempo constante) + sesión en cookie firmada (HttpOnly, SameSite=Strict, Secure
-  configurable). Todo protegido salvo `/login` y `/health`. Seguro por defecto: en
+  configurable). Todo protegido salvo `/login`, `/health`, `/metrics` y `/assets`. Seguro por defecto: en
   producción sin contraseña, no arranca. Anti–fuerza bruta por IP. Hash generable con
   `python -m vpn_manager.hashpw`.
 - **[HECHO]** Autorización por rol: tres roles (admin/operador/visor,
@@ -63,17 +63,15 @@ Hacer por web todo lo que hoy se hace por CLI en el propio servidor VPN:
 - **Acceso solo interno** (como CyberHound): nunca expuesto a internet.
 - Validación estricta de entrada (nombres de cliente, etc.) → sin inyección de
   comandos. Plantillas de config parametrizadas.
-- Las **claves privadas** de cliente se entregan una vez y no se almacenan en claro
-  innecesariamente; CRL al revocar.
+- Las **claves privadas** de cliente van dentro de su configuración, que el panel guarda para poder
+  volver a entregarla (ficheros 0600, borrados al retirar el acceso); CRL publicada al revocar.
 
 ## 4. Stack (confirmado)
 
 **Python + FastAPI** (encaja con herramientas de sistema: subprocess, parseo de
 status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound.
 
-> **Publicación:** este proyecto **sí se publicará en GitHub** (público, MIT)
-> cuando esté todo verificado — a diferencia de FieldFlow. Hasta entonces, commits
-> en local sin push y sin atribución a IA.
+> **Publicación:** público en GitHub con licencia MIT.
 
 ## 5. Hoja de ruta por fases
 
@@ -169,7 +167,12 @@ status, PKI) + UI web ligera servida por la propia API. Coherente con CyberHound
    de forma responsable en un servidor real desechable, documentado como tal
    en `INSTALACION.md`, no una carencia oculta.
 
-## 6. Datos de entorno (verificado 2026-06-21)
+9. **[HECHO 2026-11-04] Modo real de OpenVPN y WireGuard completo** (revisión contra el instalador de
+   angristan fijado): el `.ovpn` lleva CA, certificado, clave y clave TLS; la CRL se publica donde la lee
+   el servidor; el certificado `server_<aleatorio>` está protegido; tras renovar se toma la entrada nueva
+   del `index.txt`; «Desconectar» funciona por la interfaz de management; WireGuard lee y escribe el
+   formato `### Client nombre`. Probado con una PKI real (`openssl`) y claves `tls-crypt-v2` del
+   `openvpn` del sistema (`tests/test_openvpn_real.py`); sigue sin probarse contra un servidor en marcha.
 
 ## 6. Datos de entorno (verificado 2026-06-21)
 

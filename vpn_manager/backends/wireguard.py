@@ -119,6 +119,14 @@ class WireGuardBackend(VpnBackend):
                 iface[k.strip()] = v.strip()
         return iface
 
+    @staticmethod
+    def _peer_comment_name(line: str) -> str | None:
+        """Nombre del comentario que precede a un [Peer]: «# nombre» (el de antes) o «### Client
+        nombre» (el del instalador de angristan). Antes el segundo se leía como «Client nombre», con
+        un espacio que no pasaba la validación: ese dispositivo no se podía descargar ni retirar."""
+        m = re.match(r"^#+\s*(?:Client\s+)?([A-Za-z0-9][A-Za-z0-9_.-]{0,63})\s*$", line.strip())
+        return m.group(1) if m else None
+
     def _parse_peers(self) -> list[dict[str, str]]:
         """Lista de peers: {name, public_key, allowed_ips}."""
         peers: list[dict[str, str]] = []
@@ -127,7 +135,7 @@ class WireGuardBackend(VpnBackend):
         for line in self._conf_lines():
             s = line.strip()
             if s.startswith("#"):
-                pending_name = s.lstrip("# ").strip()
+                pending_name = self._peer_comment_name(s)
                 continue
             if s.startswith("[Peer]"):
                 cur = {"name": pending_name or "", "public_key": "", "allowed_ips": ""}
@@ -254,7 +262,8 @@ class WireGuardBackend(VpnBackend):
         ip = self._next_ip()
         if not self.sandbox:  # pragma: no cover - requiere wg en el host
             self._wg("set", self.interface, "peer", pub, "allowed-ips", f"{ip}/32")
-        block = f"\n# {name}\n[Peer]\nPublicKey = {pub}\nAllowedIPs = {ip}/32\n"
+        # Mismo formato que el instalador de angristan: así su script también ve los dispositivos del panel
+        block = f"\n### Client {name}\n[Peer]\nPublicKey = {pub}\nAllowedIPs = {ip}/32\n"
         with self.conf.open("a", encoding="utf-8") as f:
             f.write(block)
         self._save_config(name, self._render_conf(name, priv, ip))
@@ -282,7 +291,15 @@ class WireGuardBackend(VpnBackend):
         cfg = self.client_dir / f"{name}.conf"
         if cfg.exists():
             return cfg.read_text(encoding="utf-8")
-        # Si no se guardó (peer preexistente del fixture), genera una plantilla.
+        if not self.sandbox:
+            # Dispositivo creado fuera del panel: su clave privada no está aquí. Antes se devolvía
+            # una configuración con «(clave-privada-del-dispositivo)» que no servía para conectar.
+            raise VpnError(
+                f"La clave privada de «{name}» no está guardada en el panel (se creó fuera de él; el "
+                "instalador de angristan deja la configuración en el home de root o del usuario). "
+                "Usa ese fichero o retíralo y créalo de nuevo desde el panel."
+            )
+        # Sandbox: peer preexistente del fixture, se genera una plantilla.
         peer = self._find(name)
         ip = (peer["allowed_ips"] or "10.9.0.0/32").split("/")[0]
         return self._render_conf(name, "(clave-privada-del-dispositivo)", ip)
@@ -428,7 +445,7 @@ class WireGuardBackend(VpnBackend):
         out: list[str] = []
         i = 0
         while i < len(lines):
-            if lines[i].strip() == f"# {name}":
+            if self._peer_comment_name(lines[i]) == name:
                 # salta el comentario, el [Peer] y sus claves hasta el próximo bloque/blanco
                 i += 1
                 if i < len(lines) and lines[i].strip().startswith("[Peer]"):

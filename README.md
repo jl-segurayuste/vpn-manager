@@ -13,18 +13,23 @@ su configuración y retirarles el acceso.
 - **Personas con acceso**: lista de certificados/clientes con su estado en lenguaje
   llano (*acceso activo*, *retirado*, *caducado*) y fecha de caducidad.
 - **Alta de acceso**: crea un nuevo cliente y genera su fichero de configuración.
-- **Descarga de configuración** (`.ovpn`) de cada acceso activo.
-- **Retirar acceso**: revoca el certificado y regenera la CRL.
+- **Descarga de configuración** (`.ovpn`) de cada acceso activo, completa: CA, certificado, clave y
+  la clave del canal de control que use el servidor (`tls-crypt-v2`, `tls-crypt` o `tls-auth`), sobre
+  la plantilla `client-template.txt` del servidor si existe.
+- **Retirar acceso**: revoca el certificado, publica la CRL donde la lee el servidor (`crl-verify`)
+  y, si hay interfaz de *management*, corta la sesión abierta.
 - **Renovar acceso**: reemite el certificado de un dispositivo caducado.
 - **Configuración del servidor**: endpoint público, puerto, protocolo, **rango de
   IPs**, **cifrados**, autenticación, DNS y rutas empujadas, CRL… y todas las
   directivas del `server.conf`.
 - **Control del servicio**: arrancar, parar, reiniciar y recargar el servidor.
-- **Desconectar** una sesión activa.
+- **Desconectar** una sesión activa (en producción, por la interfaz de *management* de OpenVPN).
 - **Registros**: últimas líneas del log del servidor VPN.
 - **Conexiones en tiempo real**: quién está conectado, desde cuándo y su tráfico.
 - **Interfaz de escritorio** (no móvil) con barra lateral, y **marca por protocolo**:
   emblema y color según la VPN activa (OpenVPN en naranja, WireGuard en granate).
+- **Usuarios y roles** (administrador, operador, solo lectura) con permisos exigidos en el backend,
+  **verificación en dos pasos** (TOTP) y registro de **actividad**.
 - **Paquete de alta disponibilidad** (`POST /api/ha/clients/{name}/bundle`): si un
   mismo cliente existe en ambos backends, empaqueta en un único ZIP su acceso
   primario (OpenVPN) + un respaldo WireGuard + un script de vigilancia que
@@ -49,7 +54,8 @@ su configuración y retirarles el acceso.
 - **Autenticación obligatoria.** Login con contraseña (**PBKDF2-SHA256**, 600k
   iteraciones, comparación en tiempo constante) y sesión en **cookie firmada**
   (`HttpOnly`, `SameSite=Strict`, `Secure` configurable). Todo el panel y la API
-  requieren sesión; solo `/login` y `/health` son públicos.
+  requieren sesión; solo son públicos `/login`, `/health`, `/metrics` (métricas Prometheus, sin
+  datos de clientes) y los ficheros estáticos de `/assets`.
 - **Seguro por defecto.** En producción sin `VPNM_ADMIN_PASSWORD_HASH`, la app
   **se niega a arrancar**. En sandbox usa la credencial de desarrollo `admin/admin`
   mostrando un aviso.
@@ -111,6 +117,13 @@ pip install -e ".[e2e]" && pytest e2e/ # e2e de la interfaz en navegador (Playwr
 | `GET`  | `/api/openvpn/server` | Configuración del servidor (rangos, cifrados, DNS…) |
 | `GET`  | `/api/openvpn/logs` | Últimas líneas del registro (`?lines=80`) |
 | `POST` | `/api/openvpn/service/{action}` | `start`/`stop`/`restart`/`reload` |
+| `PUT`  | `/api/openvpn/server` | Edita el `server.conf` (validado; rol administrador) |
+| `GET`  | `/api/me` · `POST /api/me/2fa/{setup,enable,disable}` | Usuario actual y verificación en dos pasos |
+| `GET`/`POST`/`PUT`/`DELETE` | `/api/users[/{username}]` | Gestión de usuarios (administrador) |
+| `GET`  | `/api/audit` | Registro de actividad (administrador) |
+| `GET`  | `/api/preflight` | Comprobaciones de la configuración (administrador) |
+| `GET`/`POST` | `/api/system/...` | Sistema, instalación y desinstalación (`.../plan` para verlo sin ejecutar) |
+| `GET`  | `/metrics` | Métricas en formato Prometheus (público) |
 | `POST` | `/api/ha/clients/{name}/bundle` | ZIP de alta disponibilidad (requiere el cliente ya creado en ambos backends) |
 
 ## Configuración

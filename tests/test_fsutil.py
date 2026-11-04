@@ -28,3 +28,19 @@ def test_correo_con_barras_rechazado():
 
     with pytest.raises(delivery.DeliveryError):
         delivery.validate_email("../../x@ejemplo.com")
+
+
+def test_error_de_escritura_da_503_con_mensaje(monkeypatch):
+    """Antes un fichero no escribible (contenedor de solo lectura) daba un 500 sin explicación."""
+    from fastapi.testclient import TestClient
+
+    import vpn_manager.api.app as appmod
+
+    def _falla(*_a, **_k):
+        raise PermissionError(13, "Permission denied", "/app/sandbox/openvpn/pki/index.txt")
+
+    monkeypatch.setattr(appmod.OpenVpnBackend, "create_client", _falla)
+    c = TestClient(appmod.app, raise_server_exceptions=False)
+    c.post("/login", data={"username": "admin", "password": "admin"})
+    r = c.post("/api/openvpn/clients", json={"name": "x1"})
+    assert r.status_code == 503 and "index.txt" in r.json()["detail"]

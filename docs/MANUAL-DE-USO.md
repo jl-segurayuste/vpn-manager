@@ -39,7 +39,8 @@ Cuatro indicadores de un vistazo: estado del **servicio**, **accesos activos**,
 
 Controla el servidor VPN con botones claros:
 
-- **Recargar**: relee la configuración **sin cortar** a los conectados.
+- **Recargar**: relee la configuración. En WireGuard no corta a nadie; en OpenVPN es un reinicio
+  suave (las conexiones se reinician y los clientes se reconectan solos en unos segundos).
 - **Reiniciar**: aplica cambios reiniciando (desconecta un instante a los usuarios).
 - **Parar / Arrancar**: detiene o levanta el servicio.
 
@@ -80,7 +81,8 @@ su estado: **Acceso activo**, **Caducado** o **Acceso retirado**.
 ## 7. Conexiones activas
 
 Quién está usando la VPN ahora mismo, su dirección en la red, desde cuándo y su tráfico.
-En OpenVPN puedes **Desconectar** una sesión concreta.
+En OpenVPN puedes **Desconectar** una sesión concreta (en producción necesita la interfaz de
+*management*; ver el [Manual de instalación](INSTALACION.md)).
 
 ## 8. Registros
 
@@ -134,8 +136,10 @@ desinstalar los que ya no hagan falta — los mismos dos niveles en ambos sentid
 
 - **¿Cómo doy acceso a una persona nueva?** Sección Dispositivos → «Añadir dispositivo»
   → escribe el nombre → «Crear acceso» → entrégale su config (descargar / correo / QR).
-- **¿Cómo le quito el acceso a alguien?** En su fila, «Retirar acceso». Deja de conectarse
-  de inmediato (se revoca y se actualiza la CRL).
+- **¿Cómo le quito el acceso a alguien?** En su fila, «Retirar acceso». Se revoca y se
+  publica la CRL, así que ya no puede volver a conectarse. Si en ese momento estaba conectado
+  (OpenVPN), la sesión se corta al instante solo si el servidor tiene la interfaz de *management*;
+  si no, dura hasta la siguiente renegociación (1 hora como mucho). En WireGuard el corte es inmediato.
 - **¿Por qué un dispositivo sale «Caducado»?** Su certificado llegó a su fecha de
   caducidad. Pulsa «Renovar acceso».
 - **¿Los datos se actualizan solos?** Sí, el panel se refresca cada 10 segundos.

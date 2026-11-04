@@ -169,7 +169,21 @@ def _deliver_email(backend, name: str, ext: str, email: str, user: str) -> dict:
     return result
 
 
-app = FastAPI(title="VPN Manager", version="0.3.2")
+app = FastAPI(title="VPN Manager", version="0.3.3")
+
+
+@app.exception_handler(OSError)
+async def _os_error(request: Request, exc: OSError):
+    """Un fichero que no se puede leer o escribir (permisos, disco de solo lectura, lleno): mensaje
+    claro en vez de un 500 sin explicación."""
+    from fastapi.responses import JSONResponse
+
+    log.error("error de E/S en %s: %s", request.url.path, exc)
+    where = f" ({exc.filename})" if getattr(exc, "filename", None) else ""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"El servidor no puede acceder a sus ficheros{where}: {exc.strerror or exc}."},
+    )
 
 
 class _Metrics:
