@@ -13,6 +13,7 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ..fsutil import write_private
 from .base import (
     AlreadyExists,
     ConfigDirective,
@@ -435,7 +436,7 @@ class OpenVpnBackend(VpnBackend):
     # ── Helpers de escritura ───────────────────────────────────────────────
     def _save_config(self, name: str, content: str) -> None:
         self.client_dir.mkdir(parents=True, exist_ok=True)
-        (self.client_dir / f"{name}.ovpn").write_text(content, encoding="utf-8")
+        write_private(self.client_dir / f"{name}.ovpn", content)
 
     def _render_ovpn(self, name: str) -> str:
         marca = "# SANDBOX / DEMO — sin material criptográfico real" if self.sandbox else ""

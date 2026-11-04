@@ -87,7 +87,13 @@ class LoginThrottle:
         return len(fails) >= self.max_attempts
 
     def record_failure(self, key: str) -> None:
-        self._fails.setdefault(key, []).append(time.monotonic())
+        now = time.monotonic()
+        # Sin esto, cada IP que fallaba una vez se quedaba para siempre en memoria.
+        if len(self._fails) > 10_000:
+            self._fails = {
+                k: v for k, v in self._fails.items() if v and now - v[-1] < self.lock_seconds
+            }
+        self._fails.setdefault(key, []).append(now)
 
     def reset(self, key: str) -> None:
         self._fails.pop(key, None)

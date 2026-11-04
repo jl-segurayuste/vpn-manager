@@ -180,6 +180,10 @@ en ese caso.
 ## 4. Despliegue en producción (interno)
 
 > Recomendado: acceso **solo interno**, detrás de un proxy con HTTPS. No exponer a internet.
+>
+> Si el proxy no está en la misma máquina, define `FORWARDED_ALLOW_IPS=<IP del proxy>` en el
+> entorno del servicio: si no, el panel ve la IP del proxy en todas las peticiones y el bloqueo
+> tras 5 intentos fallidos deja fuera a todo el mundo a la vez.
 
 1. **Instala** en la máquina del servidor VPN (o con acceso a sus ficheros/servicio):
    ```bash

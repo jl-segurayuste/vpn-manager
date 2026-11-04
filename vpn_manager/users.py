@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from . import auth, totp
+from .fsutil import write_private
 
 # ── Roles y permisos ───────────────────────────────────────────────────────
 PERMISSIONS: dict[str, set[str]] = {
@@ -48,10 +49,14 @@ class UserStore:
         self.path = path
         self.users: dict[str, dict] = {}
         if path and path.exists():
+            # Si el fichero no se puede leer, no arrancar: antes se tomaba como vacío, se volvía a
+            # sembrar el admin de la configuración y el primer cambio sobrescribía a todos los usuarios.
             try:
                 self.users = json.loads(path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                self.users = {}
+            except (ValueError, OSError) as e:
+                raise RuntimeError(f"No se puede leer el fichero de usuarios {path}: {e}") from e
+            if not isinstance(self.users, dict):
+                raise RuntimeError(f"El fichero de usuarios {path} no tiene el formato esperado.")
         if not self.users:
             self.users = {seed_user: {"password_hash": seed_hash, "role": seed_role}}
 
@@ -60,7 +65,8 @@ class UserStore:
         if not self.path:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.users, indent=2), encoding="utf-8")
+        # Lleva los hashes de las contraseñas y los secretos TOTP: solo para el propietario.
+        write_private(self.path, json.dumps(self.users, indent=2))
 
     # ── Consulta ──────────────────────────────────────────────────────────
     def exists(self, username: str) -> bool:

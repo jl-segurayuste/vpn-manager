@@ -93,3 +93,18 @@ sin material criptográfico en el repo.
 | 4 | Baja | La función de escapado de la UI no escapaba comillas y los nombres de cliente van dentro de `onclick="…('nombre')"`: un CN con comillas creado fuera del panel podía inyectar JavaScript. | `esc()` escapa también `"` y `'`. |
 
 Los tres tests fallan con el código anterior y pasan con el corregido.
+
+## Revisión de 2026-11-04
+
+| # | Severidad | Hallazgo | Corrección |
+|---|---|---|---|
+| 1 | **Alta** | **Inyección de órdenes en el paquete de alta disponibilidad**: los hosts de comprobación, los DNS, el dominio de split-DNS y la URL de aviso se pegaban sin validar en el script de failover y en el `PostUp` del WireGuard, que el equipo del cliente ejecuta como root. Un valor con comillas o `$(…)` ejecutaba órdenes allí. | Validación estricta (host o IP, IP para los DNS, dominio, URL `http(s)://` sin comillas) con 422 si no cumple, y valores entre comillas de shell (`shlex.quote`). Tests `test_rechaza_valores_que_inyectarian_ordenes` y `test_paquete_ha_rechaza_inyeccion_de_ordenes`. |
+| 2 | **Media** | **Configuraciones con clave privada legibles por todos**: las de cliente (`clients/`, «guardar en servidor», correos simulados) y `users.json` (hashes y secretos TOTP) se creaban con la umask del proceso, 0644 en un servidor o contenedor normal. | `fsutil.write_private`: escritura atómica y 0600 en los ficheros nuevos (los existentes conservan sus permisos). Tests en `test_fsutil.py` y `test_fichero_de_usuarios_solo_para_el_propietario`. |
+| 3 | **Media** | **Un `users.json` ilegible se tomaba como vacío**: se volvía a sembrar el admin de la configuración y el primer cambio sobrescribía a todos los usuarios. | El panel no arranca y avisa; el fichero no se toca. Test `test_fichero_de_usuarios_corrupto_no_arranca`. |
+| 4 | Media | **El respaldo WireGuard no levantaba con nombres de más de 8 caracteres**: la interfaz `<nombre>-backup` superaba los 15 caracteres de Linux. Además el script buscaba el `.conf` junto a él y el README decía ponerlo en `/etc/wireguard`. | Nombre recortado a 15 caracteres; el script busca primero en `/etc/wireguard` y después junto a él. Test `test_nombre_largo_recorta_la_interfaz_a_15_caracteres`. |
+| 5 | Baja | `wg0.conf` se reescribía en sitio: un corte a mitad lo dejaba a medias, con la clave del servidor dentro. | Escritura atómica (mismo `write_private`). |
+| 6 | Baja | Guardar en el servidor o enviar por correo la configuración (que lleva la clave privada) pedía `clients:write` y no `clients:config`, como la descarga. Hoy ningún rol tiene uno sin el otro. | Piden `clients:config`; la UI los oculta igual. |
+| 7 | Baja | La dirección de correo admitía `/` y formaba parte del nombre del `.eml` simulado (escritura fuera de `outbox/` en sandbox). El limitador de logins guardaba para siempre cada IP que fallaba. | Barras rechazadas; limpieza de IPs caducadas al pasar de 10 000. |
+
+Sin cambio de código: detrás de un proxy inverso que no sea local, uvicorn ve la IP del proxy y el
+bloqueo por intentos afecta a todos. Documentado en `INSTALACION.md` (`FORWARDED_ALLOW_IPS`).

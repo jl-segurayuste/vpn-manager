@@ -14,7 +14,10 @@ import ssl
 from email.message import EmailMessage
 from pathlib import Path
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+from .fsutil import write_private
+
+# Sin barras: la dirección forma parte del nombre del .eml simulado.
+_EMAIL_RE = re.compile(r"^[^@\s/\\]+@[^@\s/\\]+\.[^@\s/\\]{2,}$")
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
 
 
@@ -35,7 +38,7 @@ def save_to_server(content: str, filename: str, dest: str, allowed_base: Path) -
         )
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / filename
-    path.write_text(content, encoding="utf-8")
+    write_private(path, content)  # lleva la clave privada del cliente
     return path
 
 
@@ -67,7 +70,7 @@ def send_email(content: str, filename: str, to_addr: str, settings, sandbox: boo
             outbox = (settings.export_dir / "outbox")
             outbox.mkdir(parents=True, exist_ok=True)
             eml = outbox / f"{filename}.{to_addr}.eml"
-            eml.write_bytes(bytes(msg))
+            write_private(eml, bytes(msg))
             return {"sent": True, "simulated": True, "to": to_addr}
         raise DeliveryError("SMTP no configurado: define VPNM_SMTP_HOST para enviar correos.")
 

@@ -13,8 +13,21 @@ fichero (`PostUp`/`PostDown`), no depende de la app ni de NetworkManager.
 from __future__ import annotations
 
 import io
+import ipaddress
+import re
+import shlex
 import zipfile
 from dataclasses import dataclass, field
+
+# Linux no admite nombres de interfaz de más de 15 caracteres y wg-quick toma el nombre del fichero.
+_IFNAME_MAX = 15
+_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.:-]{0,252})$")
+_DOMAIN_RE = re.compile(r"^~?(?:\.|[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?)$")
+_URL_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!%+,=-]+$")
+
+
+class BundleError(ValueError):
+    """Parámetro del paquete no válido."""
 
 
 @dataclass
@@ -34,6 +47,33 @@ class FailoverConfig:
     check_interval_seconds: int = 60
 
 
+def backup_iface(name: str) -> str:
+    """Nombre de la interfaz (y del .conf) de respaldo: «<nombre>-backup», recortando el nombre
+    para no pasar de 15 caracteres; con uno más largo, wg-quick no levantaba el respaldo."""
+    suffix = "-backup"
+    return name[: _IFNAME_MAX - len(suffix)] + suffix
+
+
+def validate(cfg: FailoverConfig) -> None:
+    """Rechaza valores que no sean lo que dicen ser. Todos acaban en un script y en el PostUp del
+    WireGuard, que se ejecutan como root en el equipo del cliente: sin esto, un valor con comillas
+    o «$(...)» inyectaba órdenes."""
+    if not cfg.health_check_hosts:
+        raise BundleError("Indica al menos un host de comprobación.")
+    for host in cfg.health_check_hosts:
+        if not _HOST_RE.match(host or ""):
+            raise BundleError(f"Host de comprobación no válido: «{host}».")
+    for server in cfg.dns_servers:
+        try:
+            ipaddress.ip_address(server)
+        except ValueError:
+            raise BundleError(f"Servidor DNS no válido (debe ser una IP): «{server}».") from None
+    if cfg.split_dns_domain and not _DOMAIN_RE.match(cfg.split_dns_domain):
+        raise BundleError(f"Dominio de split-DNS no válido: «{cfg.split_dns_domain}».")
+    if cfg.notify_webhook and not _URL_RE.match(cfg.notify_webhook):
+        raise BundleError("La URL de aviso debe ser http(s):// y sin espacios ni comillas.")
+
+
 def render_wireguard_conf_with_dns(base_conf: str, cfg: FailoverConfig) -> str:
     """Sustituye la línea `DNS =` plana de la plantilla por PostUp/PostDown de
     split-DNS, si se pidió. Sin esto, el respaldo funciona a nivel de red pero
@@ -45,7 +85,7 @@ def render_wireguard_conf_with_dns(base_conf: str, cfg: FailoverConfig) -> str:
     servers = " ".join(cfg.dns_servers)
     post_up = (
         f'PostUp = resolvectl dns %i {servers}; '
-        f'resolvectl domain %i "{cfg.split_dns_domain}"'
+        f'resolvectl domain %i {shlex.quote(cfg.split_dns_domain)}'
     )
     post_down = "PostDown = resolvectl revert %i"
 
@@ -72,11 +112,12 @@ def render_failover_script(cfg: FailoverConfig) -> str:
     interfaz de respaldo ya existe de un intento anterior sin limpiar,
     `wg-quick up` falla con "already exists" — aquí se limpia antes.
     """
-    hosts = " ".join(cfg.health_check_hosts)
+    hosts = " ".join(shlex.quote(h) for h in cfg.health_check_hosts)
+    iface = backup_iface(cfg.name)
     return f'''#!/usr/bin/env bash
 # Generado por vpn-manager -- vigila la VPN primaria de "{cfg.name}" y, si
 # deja de responder de verdad (dos comprobaciones seguidas), activa el
-# respaldo WireGuard ("{cfg.name}-backup.conf"). No vuelve a la primaria en
+# respaldo WireGuard ("{iface}.conf"). No vuelve a la primaria en
 # automático al recuperarse -- eso se hace a mano, para evitar oscilar.
 #
 # Requiere: wireguard-tools (wg-quick), curl. Pensado para ejecutarse via
@@ -84,11 +125,13 @@ def render_failover_script(cfg: FailoverConfig) -> str:
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-WG_CONF="${{SCRIPT_DIR}}/{cfg.name}-backup.conf"
-WG_IFACE="{cfg.name}-backup"
+WG_IFACE={shlex.quote(iface)}
+# Donde dice el README (/etc/wireguard) o, si no está ahí, junto al script.
+WG_CONF="/etc/wireguard/${{WG_IFACE}}.conf"
+[ -f "$WG_CONF" ] || WG_CONF="${{SCRIPT_DIR}}/${{WG_IFACE}}.conf"
 HEALTH_HOSTS=({hosts})
 HEALTH_PORT={cfg.health_check_port}
-NOTIFY_URL="{cfg.notify_webhook}"
+NOTIFY_URL={shlex.quote(cfg.notify_webhook) if cfg.notify_webhook else '""'}
 
 notify() {{
   local msg="$1"
@@ -137,11 +180,12 @@ fi
 
 
 def render_readme(cfg: FailoverConfig) -> str:
+    iface = backup_iface(cfg.name)
     return f'''# Paquete de alta disponibilidad — {cfg.name}
 
 - `{cfg.name}.ovpn` — conexión primaria (OpenVPN). Impórtala normalmente.
-- `{cfg.name}-backup.conf` — respaldo WireGuard. Colócalo en
-  `/etc/wireguard/{cfg.name}-backup.conf` (permisos 600, `chmod 600`).
+- `{iface}.conf` — respaldo WireGuard. Colócalo en
+  `/etc/wireguard/{iface}.conf` (permisos 600, `chmod 600`).
 - `{cfg.name}-failover.sh` — vigila la primaria y activa el respaldo si hace
   falta. Dale permiso de ejecución y prográmalo cada
   {cfg.check_interval_seconds} segundos:
@@ -153,13 +197,14 @@ def render_readme(cfg: FailoverConfig) -> str:
   ```
 
 No vuelve a la VPN primaria en automático al recuperarse — eso se hace a
-mano (`wg-quick down /etc/wireguard/{cfg.name}-backup.conf`) una vez
+mano (`wg-quick down /etc/wireguard/{iface}.conf`) una vez
 confirmado que la primaria ya funciona, para evitar oscilar entre las dos.
 '''
 
 
 def build_bundle_zip(*, openvpn_conf: str, wireguard_conf: str, cfg: FailoverConfig) -> bytes:
     """Empaqueta ambas configs + el script de failover + un README en un ZIP."""
+    validate(cfg)
     wg_conf_with_dns = render_wireguard_conf_with_dns(wireguard_conf, cfg)
     script = render_failover_script(cfg)
     readme = render_readme(cfg)
@@ -167,7 +212,7 @@ def build_bundle_zip(*, openvpn_conf: str, wireguard_conf: str, cfg: FailoverCon
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(f"{cfg.name}.ovpn", openvpn_conf)
-        zf.writestr(f"{cfg.name}-backup.conf", wg_conf_with_dns)
+        zf.writestr(f"{backup_iface(cfg.name)}.conf", wg_conf_with_dns)
         zf.writestr(f"{cfg.name}-failover.sh", script)
         zf.writestr("README.md", readme)
     return buf.getvalue()

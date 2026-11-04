@@ -1,6 +1,8 @@
 import zipfile
 from io import BytesIO
 
+import pytest
+
 from vpn_manager.ha_bundle import (
     FailoverConfig,
     build_bundle_zip,
@@ -39,7 +41,7 @@ class TestRenderWireguardConfWithDns:
         out = render_wireguard_conf_with_dns(_WG_CONF_REAL, cfg)
         assert "DNS = 1.1.1.1" not in out  # la línea plana desaparece
         assert 'PostUp = resolvectl dns %i 10.0.0.53 10.0.0.54' in out
-        assert 'resolvectl domain %i "~miempresa.local"' in out
+        assert "resolvectl domain %i '~miempresa.local'" in out
         assert "PostDown = resolvectl revert %i" in out
         # el PostUp/PostDown va justo tras PrivateKey, dentro de [Interface]
         lines = out.splitlines()
@@ -100,7 +102,7 @@ class TestRenderFailoverScript:
             notify_webhook="https://ntfy.example.com/vpn",
         )
         script = render_failover_script(cfg)
-        assert 'NOTIFY_URL="https://ntfy.example.com/vpn"' in script
+        assert "NOTIFY_URL=https://ntfy.example.com/vpn" in script
 
 
 class TestRenderReadme:
@@ -132,3 +134,42 @@ class TestBuildBundleZip:
             assert zf.read("alice.ovpn").decode() == "contenido-ovpn-de-prueba"
             assert "PostUp = resolvectl" in zf.read("alice-backup.conf").decode()
             assert "#!/usr/bin/env bash" in zf.read("alice-failover.sh").decode()
+
+
+class TestValidacionYNombres:
+    def test_nombre_largo_recorta_la_interfaz_a_15_caracteres(self):
+        from vpn_manager.ha_bundle import backup_iface
+
+        assert backup_iface("alice") == "alice-backup"
+        largo = backup_iface("portatil-de-marketing")
+        assert len(largo) == 15 and largo.endswith("-backup")
+        cfg = FailoverConfig(name="portatil-de-marketing", health_check_hosts=["10.0.0.1"])
+        data = build_bundle_zip(openvpn_conf="x", wireguard_conf=_WG_CONF_REAL, cfg=cfg)
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            assert f"{largo}.conf" in zf.namelist()
+            assert f"WG_IFACE={largo}" in zf.read("portatil-de-marketing-failover.sh").decode()
+
+    @pytest.mark.parametrize("campo, valor", [
+        ("health_check_hosts", ["10.0.0.1; rm -rf /"]),
+        ("health_check_hosts", ["$(id)"]),
+        ("dns_servers", ["10.0.0.53; curl x"]),
+        ("split_dns_domain", '~x.local"; id; echo "'),
+        ("notify_webhook", 'https://x/"; id; echo "'),
+        ("notify_webhook", "ftp://x/y"),
+    ])
+    def test_rechaza_valores_que_inyectarian_ordenes(self, campo, valor):
+        from vpn_manager.ha_bundle import BundleError
+
+        kwargs = {"name": "alice", "health_check_hosts": ["10.0.0.1"],
+                  "dns_servers": ["10.0.0.53"], "split_dns_domain": "~x.local", campo: valor}
+        with pytest.raises(BundleError):
+            build_bundle_zip(openvpn_conf="x", wireguard_conf=_WG_CONF_REAL,
+                             cfg=FailoverConfig(**kwargs))
+
+    def test_admite_ipv6_y_url_con_parametros(self):
+        cfg = FailoverConfig(name="alice", health_check_hosts=["fd00::1", "nas.lan"],
+                             dns_servers=["fd00::53"], split_dns_domain="~.",
+                             notify_webhook="https://ntfy.sh/vpn?priority=high")
+        script = render_failover_script(cfg)
+        assert "NOTIFY_URL='https://ntfy.sh/vpn?priority=high'" in script
+        build_bundle_zip(openvpn_conf="x", wireguard_conf=_WG_CONF_REAL, cfg=cfg)

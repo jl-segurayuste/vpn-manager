@@ -19,6 +19,7 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ..fsutil import write_private
 from .base import (
     AlreadyExists,
     ConfigDirective,
@@ -350,7 +351,7 @@ class WireGuardBackend(VpnBackend):
         peers = self._peer_section_text()
         if peers:
             body += "\n" + peers.rstrip("\n") + "\n"
-        self.conf.write_text(body, encoding="utf-8")
+        write_private(self.conf, body)
         return self.server_info()
 
     # ── Control del servicio y registros ───────────────────────────────────
@@ -419,7 +420,7 @@ class WireGuardBackend(VpnBackend):
 
     def _save_config(self, name: str, content: str) -> None:
         self.client_dir.mkdir(parents=True, exist_ok=True)
-        (self.client_dir / f"{name}.conf").write_text(content, encoding="utf-8")
+        write_private(self.client_dir / f"{name}.conf", content)
 
     def _remove_peer_block(self, name: str) -> None:
         """Elimina del wg0.conf el comentario «# name» y su bloque [Peer]."""
@@ -440,7 +441,7 @@ class WireGuardBackend(VpnBackend):
                 continue
             out.append(lines[i])
             i += 1
-        self.conf.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
+        write_private(self.conf, "\n".join(out).rstrip("\n") + "\n")
 
     def _wg(self, *args: str) -> None:  # pragma: no cover - requiere wg real
         try:

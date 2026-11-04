@@ -57,3 +57,24 @@ def test_verify_totp_permite_el_siguiente_codigo_temporal(tmp_path):
         store.verify_totp("admin", totp.now_code(secret, at=at_siguiente), at=at_siguiente)
         is True
     )
+
+
+def test_fichero_de_usuarios_corrupto_no_arranca(tmp_path):
+    import pytest
+
+    from vpn_manager import auth, users
+
+    f = tmp_path / "users.json"
+    f.write_text("{no es json", encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        users.UserStore(f, "admin", auth.hash_password("x"))
+    assert f.read_text(encoding="utf-8") == "{no es json"   # no se sobrescribe
+
+
+def test_fichero_de_usuarios_solo_para_el_propietario(tmp_path):
+    from vpn_manager import auth, users
+
+    f = tmp_path / "users.json"
+    s = users.UserStore(f, "admin", auth.hash_password("x"))
+    s.add("ana", "contraseña-larga", "viewer")
+    assert f.stat().st_mode & 0o777 == 0o600

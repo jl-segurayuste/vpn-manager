@@ -69,6 +69,8 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+from .fsutil import write_private
+
 REPOS = {
     "openvpn": "angristan/openvpn-install",
     "wireguard": "angristan/wireguard-install",
@@ -151,7 +153,7 @@ def fetch_and_verify(url: str, sha256_expected: str, dest: Path) -> Path:
             f"(esperado {sha256_expected[:12]}…, obtenido {actual[:12]}…). No se ejecuta."
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+    write_private(dest, data, 0o700)
     dest.chmod(0o700)
     return dest
 

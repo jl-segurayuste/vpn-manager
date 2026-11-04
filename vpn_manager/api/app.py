@@ -169,7 +169,7 @@ def _deliver_email(backend, name: str, ext: str, email: str, user: str) -> dict:
     return result
 
 
-app = FastAPI(title="VPN Manager", version="0.3.1")
+app = FastAPI(title="VPN Manager", version="0.3.2")
 
 
 class _Metrics:
@@ -687,12 +687,12 @@ def wg_qr(name: str) -> Response:
 
 
 @app.post("/api/wireguard/clients/{name}/save", dependencies=_PROTECTED)
-def wg_save(name: str, body: SavePath, user: str = Depends(require_perm("clients:write"))) -> dict:
+def wg_save(name: str, body: SavePath, user: str = Depends(require_perm("clients:config"))) -> dict:
     return _deliver_save(_wireguard(), name, "conf", body.path, user)
 
 
 @app.post("/api/wireguard/clients/{name}/email", dependencies=_PROTECTED)
-def wg_email(name: str, body: SendEmail, user: str = Depends(require_perm("clients:write"))) -> dict:
+def wg_email(name: str, body: SendEmail, user: str = Depends(require_perm("clients:config"))) -> dict:
     return _deliver_email(_wireguard(), name, "conf", body.email, user)
 
 
@@ -774,12 +774,12 @@ def openvpn_config(name: str, user: str = Depends(require_perm("clients:config")
 
 
 @app.post("/api/openvpn/clients/{name}/save", dependencies=_PROTECTED)
-def openvpn_save(name: str, body: SavePath, user: str = Depends(require_perm("clients:write"))) -> dict:
+def openvpn_save(name: str, body: SavePath, user: str = Depends(require_perm("clients:config"))) -> dict:
     return _deliver_save(_openvpn(), name, "ovpn", body.path, user)
 
 
 @app.post("/api/openvpn/clients/{name}/email", dependencies=_PROTECTED)
-def openvpn_email(name: str, body: SendEmail, user: str = Depends(require_perm("clients:write"))) -> dict:
+def openvpn_email(name: str, body: SendEmail, user: str = Depends(require_perm("clients:config"))) -> dict:
     return _deliver_email(_openvpn(), name, "ovpn", body.email, user)
 
 
@@ -805,9 +805,12 @@ def ha_bundle_download(
         notify_webhook=body.notify_webhook,
         check_interval_seconds=body.check_interval_seconds,
     )
-    zip_bytes = ha_bundle.build_bundle_zip(
-        openvpn_conf=openvpn_conf, wireguard_conf=wireguard_conf, cfg=cfg
-    )
+    try:
+        zip_bytes = ha_bundle.build_bundle_zip(
+            openvpn_conf=openvpn_conf, wireguard_conf=wireguard_conf, cfg=cfg
+        )
+    except ha_bundle.BundleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     log.info("descarga de paquete de alta disponibilidad de «%s» por %s", name, user)
     return Response(
         content=zip_bytes,

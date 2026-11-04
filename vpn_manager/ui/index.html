@@ -806,9 +806,9 @@ function renderClients(cl){
       // dispositivo homónimo en WireGuard (respaldo) -- solo tiene sentido
       // ofrecerlo desde la vista de OpenVPN.
       const ha = (BACKEND==='openvpn' && w && cfg) ? `<button class="act" onclick="haBundle('${n}')">Alta disponibilidad</button>` : '';
-      const wr = w ? `<button class="act" onclick="saveConfig('${n}')">Guardar en servidor</button>
-        <button class="act" onclick="emailConfig('${n}')">Enviar por correo</button>
-        <button class="act danger" onclick="revokeClient('${n}')">Retirar acceso</button>` : '';
+      const wr = (w && cfg ? `<button class="act" onclick="saveConfig('${n}')">Guardar en servidor</button>
+        <button class="act" onclick="emailConfig('${n}')">Enviar por correo</button>` : '')
+        + (w ? `<button class="act danger" onclick="revokeClient('${n}')">Retirar acceso</button>` : '');
       actions=`<div class="actions">
         ${cfg ? `<a class="act" href="${api('/clients/'+enc+'/config')}" download>Descargar</a>` : ''}${qr}${ha}${wr}</div>`;
     } else if(c.status==='expired' && w){

@@ -475,6 +475,29 @@ class TestRolesApi:
         assert r.status_code == 403
         assert "clients:config" not in visor.get("/api/me").json()["permissions"]
 
+    def test_paquete_ha_rechaza_inyeccion_de_ordenes(self, monkeypatch):
+        """Los campos van a un script que el cliente ejecuta como root."""
+        import vpn_manager.api.app as appmod
+
+        class _Stub:
+            def client_config(self, name):
+                return "[Interface]\nPrivateKey = x\n"
+
+        monkeypatch.setattr(appmod, "_openvpn", _Stub)
+        monkeypatch.setattr(appmod, "_wireguard", _Stub)
+        oper = self._login("oper", "operario1")
+        url = "/api/ha/clients/ana/bundle"
+        malo = {"health_check_hosts": ["10.0.0.1"], "notify_webhook": 'https://x/"; id; "'}
+        assert oper.post(url, json=malo).status_code == 422
+        assert oper.post(url, json={"health_check_hosts": ["10.0.0.1"]}).status_code == 200
+
+    def test_guardar_o_enviar_la_config_exige_poder_descargarla(self):
+        visor = self._login("visor", "visor1234")
+        name = next(c["name"] for c in visor.get("/api/openvpn/clients").json() if c["status"] == "valid")
+        assert visor.post(f"/api/openvpn/clients/{name}/save", json={"path": "x"}).status_code == 403
+        assert visor.post(f"/api/openvpn/clients/{name}/email",
+                          json={"email": "a@ejemplo.com"}).status_code == 403
+
     def test_configurar_2fa_no_la_desactiva(self):
         """Antes /2fa/setup ponía totp_enabled=False: con una sesión robada se quitaba sin código."""
         from vpn_manager.totp import now_code
