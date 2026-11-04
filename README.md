@@ -7,6 +7,57 @@ sencilla, en lugar de por línea de comandos. Pensado para que **alguien sin con
 técnicos** pueda gestionar quién tiene acceso a la red: dar de alta dispositivos, descargar
 su configuración y retirarles el acceso.
 
+## Capturas
+
+Tomadas en modo sandbox, con los datos ficticios de `sandbox/` (nombres e IPs de ejemplo).
+Se regeneran con `python e2e/capturas.py` (necesita Playwright y Chrome).
+
+![Dispositivos con acceso (OpenVPN)](docs/img/clientes.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/resumen.png" alt="Resumen"><br><sub><b>Resumen</b>: estado del servicio y totales</sub></td>
+<td width="50%"><img src="docs/img/conexiones.png" alt="Conexiones"><br><sub><b>Conexiones</b>: quién está conectado ahora y su tráfico</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/alta-dispositivo.png" alt="Alta de dispositivo"><br><sub><b>Alta de un dispositivo</b> en un paso</sub></td>
+<td><img src="docs/img/servidor.png" alt="Configuración"><br><sub><b>Configuración</b> del servidor, editable</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/servicio.png" alt="Servicio"><br><sub><b>Servicio</b>: recargar, reiniciar y parar</sub></td>
+<td><img src="docs/img/registros.png" alt="Registros"><br><sub><b>Registros</b> del servidor, con los errores resaltados</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/sistema.png" alt="Sistema"><br><sub><b>Sistema</b>: paquetes instalados y comprobaciones de seguridad</sub></td>
+<td><img src="docs/img/usuarios.png" alt="Usuarios"><br><sub><b>Usuarios</b> del panel y sus roles</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/actividad.png" alt="Actividad"><br><sub><b>Actividad</b>: registro de auditoría con búsqueda</sub></td>
+<td><img src="docs/img/cuenta.png" alt="Mi cuenta"><br><sub><b>Mi cuenta</b>: verificación en dos pasos (2FA)</sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>WireGuard</b> (el mismo panel; se cambia de servidor abajo a la izquierda)</summary>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/wireguard-clientes.png" alt="WireGuard: dispositivos"><br><sub>Dispositivos, con código QR para el móvil</sub></td>
+<td width="50%"><img src="docs/img/wireguard-conexiones.png" alt="WireGuard: conexiones"><br><sub>Conexiones</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/wireguard-servidor.png" alt="WireGuard: configuración"><br><sub>Configuración</sub></td>
+<td><img src="docs/img/login.png" alt="Inicio de sesión"><br><sub>Inicio de sesión</sub></td>
+</tr>
+</table>
+</details>
+
+<details>
+<summary><b>Móvil</b></summary>
+
+<p><img src="docs/img/movil.png" alt="Resumen en el móvil" width="260"> <img src="docs/img/movil-dispositivos.png" alt="Dispositivos en el móvil" width="260"></p>
+</details>
+
 ## Características
 
 - **Resumen**: totales de accesos activos, conectados y caducados/retirados.

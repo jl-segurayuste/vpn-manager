@@ -154,6 +154,35 @@
     border-radius:11px;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.22);opacity:0;
     transform:translateY(8px);transition:.2s;pointer-events:none}
   .toast.show{opacity:1;transform:none}
+
+  /* ── Móvil: la barra lateral pasa a cabecera y el menú a una fila deslizable ── */
+  @media (max-width:820px){
+    .app{flex-direction:column}
+    .side{width:auto;height:auto;position:static;padding:14px 16px 10px}
+    .side .brand{padding:0 0 10px}
+    .backend-badge,.svc-chip{display:inline-flex;margin:0 6px 10px 0;padding:8px 11px;vertical-align:top}
+    nav{flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:4px;scrollbar-width:none}
+    nav::-webkit-scrollbar{display:none}
+    nav a{flex:none;white-space:nowrap;gap:6px}
+    .side .switch{margin-top:10px}
+    .side .foot{margin-top:0;padding-top:10px;display:flex;gap:8px;align-items:center}
+    .side .foot .me-chip{margin-bottom:0}
+    .side .foot form{flex:1}
+    main{padding:20px 16px 48px}
+    h1{font-size:21px}
+    .stats{grid-template-columns:repeat(2,1fr);gap:10px}
+    .stat{padding:14px}
+    .stat .v{font-size:22px}
+    .srvgrid{grid-template-columns:1fr}
+    .cfgrow,.advrow{grid-template-columns:1fr;gap:4px}
+    .sechead{flex-wrap:wrap;align-items:flex-start}
+    .row{flex-wrap:wrap;padding:14px 16px}
+    .row .right{margin-left:0;align-items:flex-start;text-align:left}
+    .actions{flex-wrap:wrap;gap:6px 14px}
+    .addform.open{flex-wrap:wrap}
+    .addform input{flex-basis:100%}
+    .toast{left:16px;right:16px;bottom:16px}
+  }
 </style>
 </head>
 <body>

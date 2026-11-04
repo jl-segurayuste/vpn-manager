@@ -171,7 +171,7 @@ def _deliver_email(backend, name: str, ext: str, email: str, user: str) -> dict:
     return result
 
 
-app = FastAPI(title="VPN Manager", version="0.3.4")
+app = FastAPI(title="VPN Manager", version="0.3.5")
 
 
 @app.exception_handler(OSError)
