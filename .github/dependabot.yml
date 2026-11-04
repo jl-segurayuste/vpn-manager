@@ -2,6 +2,8 @@ version: 2
 updates:
   - package-ecosystem: pip
     directory: /
+    # Solo mueve las versiones fijadas (==); no sube los mínimos (>=) sin necesidad.
+    versioning-strategy: increase-if-necessary
     schedule:
       interval: weekly
     groups:
