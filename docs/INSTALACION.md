@@ -112,9 +112,12 @@ Copia `.env.example` a `.env` y ajusta. Todas las variables llevan prefijo `VPNM
   La forma de invocar tanto instalar como desinstalar difiere por backend, según lo
   que el script realmente soporta en el commit fijado (verificado línea a línea
   contra ambos, no contra `master`):
-  - **OpenVPN**: el propio script ya trae subcomandos (`uninstall --force` para
-    desinstalar) completamente desatendidos de fábrica — no necesita variables de
-    entorno ni stdin más allá de las ya documentadas para instalar.
+  - **OpenVPN**: el script fijado funciona por subcomandos. El panel instala con
+    `install --endpoint <VPNM_OPENVPN_PUBLIC_ENDPOINT> --client cliente1` (modo no interactivo,
+    resto de valores por defecto del script: cloudflare como DNS, `tls-crypt-v2`, puerto 1194/UDP) y
+    desinstala con `uninstall --force`. Hasta la 0.3.4 lo lanzaba sin subcomando: el script solo
+    mostraba la ayuda y el panel daba la instalación por buena. Ahora, si al terminar no existe
+    `/etc/openvpn/server/server.conf`, la instalación se da por fallida.
   - **WireGuard**: sigue siendo un script de menú interactivo antiguo, sin
     subcomandos. Para desinstalar, `MENU_OPTION=4` salta el menú y se alimenta
     `"y\n"` por stdin para la confirmación final, que el script pide siempre sin
