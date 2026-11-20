@@ -55,7 +55,11 @@ def validate_directive(key: str, value: str) -> str | None:
             return f"«{field['label']}» debe ser ≥ {field['min']}."
         if "max" in field and n > field["max"]:
             return f"«{field['label']}» debe ser ≤ {field['max']}."
-    elif field["type"] == "text" and field.get("pattern") and value:
-        if not re.match(field["pattern"], value.strip()):
-            return f"«{field['label']}» no tiene el formato esperado."
+    elif (
+        field["type"] == "text"
+        and field.get("pattern")
+        and value
+        and not re.match(field["pattern"], value.strip())
+    ):
+        return f"«{field['label']}» no tiene el formato esperado."
     return None
